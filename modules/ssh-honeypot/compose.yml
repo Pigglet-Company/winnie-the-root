@@ -1,0 +1,89 @@
+# modules/ssh-honeypot/compose.yml
+# Arranque (tras scripts/init.sh):  docker compose up -d --build
+name: ssh-honeypot
+
+x-hardening: &hardening
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  read_only: true
+  pids_limit: 256
+
+services:
+  hp-cowrie:
+    <<: *hardening
+    image: cowrie/cowrie:v2.6.1            # versión fija (ver NOTAS_CONTRATO.md)
+    container_name: hp-cowrie
+    hostname: srv-prod-01
+    cpus: ${COWRIE_CPUS:-1.0}
+    mem_limit: ${COWRIE_MEM_LIMIT:-512m}
+    environment:
+      TZ: UTC
+    ports:
+      - "${HP_BIND_ADDR:-0.0.0.0}:2222:2222"   # SSH
+      - "${HP_BIND_ADDR:-0.0.0.0}:2223:2223"   # Telnet
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - honeylogs:/logs                                   # JSON compartido (A escribe, C lee)
+      - cowrie-data:/cowrie/cowrie-git/var                # TTY logs, descargas, claves de host, cowrie.log
+      - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./cowrie/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
+      - ./cowrie/honeyfs/etc/hostname:/cowrie/cowrie-git/honeyfs/etc/hostname:ro
+      - ./cowrie/honeyfs/etc/issue:/cowrie/cowrie-git/honeyfs/etc/issue:ro
+      - ./cowrie/honeyfs/etc/motd:/cowrie/cowrie-git/honeyfs/etc/motd:ro
+      # Opcional (recomendado, ver README §9): sistema de ficheros propio sin el usuario "phil"
+      # - ./cowrie/fs.pickle:/cowrie/cowrie-git/share/cowrie/fs.pickle:ro
+    networks:
+      honeynet:
+        ipv4_address: 172.30.0.10                         # IP fija: la usan las redirecciones de producción
+    healthcheck:
+      # La imagen no trae shell: se usa el Python de la propia imagen
+      test: ["CMD", "/cowrie/cowrie-env/bin/python", "-c",
+             "import socket; socket.create_connection(('127.0.0.1', 2222), 2).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  hp-opencanary:
+    <<: *hardening
+    build:
+      context: ./opencanary
+    image: ssh-honeypot/opencanary:0.9.4
+    container_name: hp-opencanary
+    hostname: srv-prod-01
+    cpus: ${CANARY_CPUS:-0.5}
+    mem_limit: ${CANARY_MEM_LIMIT:-256m}
+    environment:
+      TZ: UTC
+    ports:
+      - "${HP_BIND_ADDR:-0.0.0.0}:2121:2121"   # FTP
+      - "${HP_BIND_ADDR:-0.0.0.0}:3307:3306"   # MySQL
+      - "${HP_BIND_ADDR:-0.0.0.0}:6380:6379"   # Redis
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /home/canary:size=16m,uid=10001,gid=10001,mode=0750
+    volumes:
+      - honeylogs:/logs
+      - ./opencanary/opencanary.conf:/etc/opencanaryd/opencanary.conf:ro
+    networks:
+      honeynet:
+        ipv4_address: 172.30.0.11
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import socket; socket.create_connection(('127.0.0.1', 2121), 2).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  honeylogs:
+    external: true      # lo crea scripts/init.sh
+  cowrie-data:          # privado del módulo: TTY logs y malware descargado (nunca se sirve)
+
+networks:
+  honeynet:
+    external: true      # 172.30.0.0/24, lo crea scripts/init.sh

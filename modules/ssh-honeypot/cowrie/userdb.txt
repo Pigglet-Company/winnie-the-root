@@ -1,0 +1,16 @@
+# Formato: usuario:x:contraseña    ('*' = comodín, '!clave' = denegar)
+# SOLO estas combinaciones débiles permiten entrar; cualquier otra falla
+# (genera cowrie.login.failed para el análisis de fuerza bruta).
+root:x:root
+root:x:toor
+root:x:admin
+root:x:password
+admin:x:admin
+admin:x:1234
+admin:x:password
+ubuntu:x:ubuntu
+pi:x:raspberry
+user:x:user
+test:x:test
+oracle:x:oracle
+postgres:x:postgres
