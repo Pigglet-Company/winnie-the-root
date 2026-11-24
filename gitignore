@@ -1,0 +1,77 @@
+# ============================================================
+# Winee de Pou - archivos locales y datos que no deben publicarse
+# ============================================================
+
+# Variables de entorno y configuracion local (mantener los .env.example)
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Secretos, credenciales, tokens y claves privadas
+.secrets/
+secrets/
+*.secret
+*.secrets
+*.token
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+id_ecdsa
+
+# Certificados y material TLS generado localmente
+*.crt
+*.cer
+*.csr
+
+# Datos y logs reales generados por los honeypots
+logs/
+**/logs/
+# No ignorar todos los .log: el repositorio contiene fixtures de ejemplo.
+# Solo se excluyen rutas de logs reales/generados indicadas mas abajo.
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# Datos de ejecucion y muestras generadas localmente
+modules/pipeline/sample-logs/
+modules/pipeline/geoip/*.mmdb
+modules/web-honeypot/uploads/
+modules/web-honeypot/data/
+
+# Exportaciones locales de eventos
+export-*.csv
+export-*.ndjson
+export-*.jsonl
+
+# Python: bytecode, caches y entornos virtuales
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.venv/
+venv/
+ENV/
+
+# Herramientas y sistema operativo
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
