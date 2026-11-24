@@ -9,3 +9,6 @@ Winnie is a honeypot telemetry project. It runs decoy network services and a dec
 | [Telemetry pipeline](docs/modules/pipeline/guide.md) | Vector normalizes and classifies events, OpenSearch indexes them, and Dashboards displays them. |
 
 Start with the [architecture and data flow](docs/architecture.md). Read the [architecture review](docs/architecture-review.md) before considering a deployment with live traffic. The [quality guide](docs/quality.md) explains local checks and CI.
+
+## Estructura
+<img width="768" height="714" alt="image" src="https://github.com/user-attachments/assets/96146f8e-67eb-4db4-9c18-814af0e58df2" />
