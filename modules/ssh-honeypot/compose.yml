@@ -13,7 +13,7 @@ x-hardening: &hardening
 services:
   hp-cowrie:
     <<: *hardening
-    image: cowrie/cowrie:v2.6.1            # versión fija (ver NOTAS_CONTRATO.md)
+    image: cowrie/cowrie:3.1.8            # versión fija (ver NOTAS_CONTRATO.md)
     container_name: hp-cowrie
     hostname: srv-prod-01
     cpus: ${COWRIE_CPUS:-1.0}

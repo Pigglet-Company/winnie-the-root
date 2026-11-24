@@ -26,12 +26,13 @@
 # ----------------------------------------------------------------------------
 # 1) Validación mínima del esquema: lo que falle va a la cola de errores
 # ----------------------------------------------------------------------------
-_ = string!(.event_id)
-_ = string!(."@timestamp")
-_ = string!(.honeypot)
-_ = string!(.service)
+.event_id = string!(.event_id)
+."@timestamp" = string!(."@timestamp")
+.honeypot = string!(.honeypot)
+.service = string!(.service)
+.src_ip = ip_ntop!(ip_pton!(string!(.src_ip)))
+
 et = string!(.event_type)
-_ = ip_pton!(string!(.src_ip))
 
 # ----------------------------------------------------------------------------
 # 2) Preparación de textos a inspeccionar
@@ -43,8 +44,8 @@ body = string(.http.body) ?? ""
 ua = downcase(string(.http.user_agent) ?? "")
 
 joined = path + " " + query + " " + body
-dec = decode_percent(joined) ?? joined
-dec = decode_percent(dec) ?? dec            # doble codificación (%2527)
+dec = decode_percent(joined)
+dec = decode_percent(dec)           # doble codificación (%2527)
 p = downcase(replace(dec, "+", " "))        # texto de payload web
 pathl = downcase(path)
 cmdi_text = p + " " + ua                    # incluye el User-Agent (shellshock)
@@ -150,5 +151,5 @@ if tech != null {
 # 6) Campos auxiliares para el sink (no se indexan: _id e índice diario)
 # ----------------------------------------------------------------------------
 .doc_id = .event_id
-ts = parse_timestamp!(string!(."@timestamp"), "%+")
+ts = parse_timestamp!(."@timestamp", "%+")
 .idx = "honeypot-events-" + format_timestamp!(ts, "%Y.%m.%d")

@@ -1,19 +1,19 @@
 {
-  "generated_at": "2026-11-24T14:09:49.310Z",
+  "generated_at": "2026-11-24T18:14:43.353Z",
   "seed": 42,
   "days": 7,
-  "total_lines": 6815,
+  "total_lines": 6786,
   "lines_per_file": {
-    "cowrie": 4947,
-    "opencanary": 695,
-    "web": 1173
+    "cowrie": 4808,
+    "opencanary": 700,
+    "web": 1278
   },
-  "expected_indexed": 6001,
+  "expected_indexed": 6010,
   "expected_indexed_per_honeypot": {
-    "cowrie": 4138,
-    "opencanary": 692,
-    "web": 1171
+    "cowrie": 4037,
+    "opencanary": 697,
+    "web": 1276
   },
-  "ignored_lines": 807,
+  "ignored_lines": 769,
   "corrupt_lines": 7
 }
