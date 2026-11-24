@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-11-24T14:09:49.310Z",
+  "seed": 42,
+  "days": 7,
+  "total_lines": 6815,
+  "lines_per_file": {
+    "cowrie": 4947,
+    "opencanary": 695,
+    "web": 1173
+  },
+  "expected_indexed": 6001,
+  "expected_indexed_per_honeypot": {
+    "cowrie": 4138,
+    "opencanary": 692,
+    "web": 1171
+  },
+  "ignored_lines": 807,
+  "corrupt_lines": 7
+}
