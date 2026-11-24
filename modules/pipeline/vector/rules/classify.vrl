@@ -1,0 +1,154 @@
+# =============================================================================
+# classify.vrl  -  UNICO fichero de reglas de clasificación (contrato §7)
+#
+# Añade a cada evento:  attack_type, mitre_technique, mitre_tactic
+#
+# CÓMO AMPLIAR
+#   * Nueva firma:   añade una alternativa "|nuevo_patron" a la regex de la
+#                    regla (sección 3) o un nuevo "else if match(...)".
+#   * Nuevo tipo:    asigna un valor nuevo a `at` y añade su par técnica/táctica
+#                    en la sección 4 (tabla MITRE).
+#   * Probar:        añade un caso en ../tests.yaml y ejecuta tests/run_vector_tests.sh
+#   * Las regex usan sintaxis Rust (sin lookahead). \x27 = apóstrofo, \x60 = acento grave.
+#   * Los textos web ya llegan en minúsculas y con %xx decodificado (doble pasada).
+#
+# PRECEDENCIA (la primera regla que casa gana):
+#   por event_type:  auth_attempt -> brute_force | file_upload | file_download
+#                    command -> malware_download / post_exploitation_command
+#                    connection -> recon_scan | request -> reglas web (3.4)
+#   web: lfi_rfi > sqli > xss > command_injection > recon_scan > other
+#
+# DECISIONES: todo login (fallido o no) se etiqueta brute_force (cada intento
+# es un intento de credenciales). credential_stuffing (T1110.004) está previsto
+# pero desactivado: requiere agregación temporal (ver sección 5).
+# =============================================================================
+
+# ----------------------------------------------------------------------------
+# 1) Validación mínima del esquema: lo que falle va a la cola de errores
+# ----------------------------------------------------------------------------
+_ = string!(.event_id)
+_ = string!(."@timestamp")
+_ = string!(.honeypot)
+_ = string!(.service)
+et = string!(.event_type)
+_ = ip_pton!(string!(.src_ip))
+
+# ----------------------------------------------------------------------------
+# 2) Preparación de textos a inspeccionar
+# ----------------------------------------------------------------------------
+cmd = downcase(string(.command) ?? "")
+path = string(.http.path) ?? ""
+query = string(.http.query) ?? ""
+body = string(.http.body) ?? ""
+ua = downcase(string(.http.user_agent) ?? "")
+
+joined = path + " " + query + " " + body
+dec = decode_percent(joined) ?? joined
+dec = decode_percent(dec) ?? dec            # doble codificación (%2527)
+p = downcase(replace(dec, "+", " "))        # texto de payload web
+pathl = downcase(path)
+cmdi_text = p + " " + ua                    # incluye el User-Agent (shellshock)
+
+# ----------------------------------------------------------------------------
+# 3) Reglas
+# ----------------------------------------------------------------------------
+at = "other"
+
+if et == "auth_attempt" {
+  # 3.1 Cualquier intento de login en cualquier servicio
+  at = "brute_force"
+
+} else if et == "file_upload" {
+  # 3.2 Subida de fichero (web shell en el señuelo web)
+  at = "file_upload"
+
+} else if et == "file_download" {
+  # 3.3 Descarga de fichero iniciada por el atacante (wget/curl/tftp en Cowrie)
+  at = "malware_download"
+
+} else if et == "command" {
+  # 3.3b Comandos: descarga desde URL externa o comando tras login
+  if match(cmd, r'\b(wget|curl|lwp-download|ftpget)\b.*(https?|ftp)://|\btftp\b.*(\s-[gr]\b|\d+\.\d+\.\d+\.\d+)|\bbusybox\s+(wget|tftp|ftpget)\b') {
+    at = "malware_download"
+  } else {
+    at = "post_exploitation_command"
+  }
+
+} else if et == "connection" {
+  # 3.3c Conexión sin autenticar
+  at = "recon_scan"
+
+} else if et == "request" {
+  # 3.4 Peticiones web
+
+  # 3.4.1 LFI / RFI: path traversal, ficheros sensibles, wrappers, include remoto
+  if match(p, r'\.\./|\.\.\\|/etc/(passwd|shadow|group|hosts)|/proc/self/|/windows/win\.ini|boot\.ini|(php|file|data|expect|zip|phar|gopher|dict)://|(include|require|page|file|path|template|url|src|inc|doc|load)=\s*(https?|ftp)://') {
+    at = "lfi_rfi"
+
+  # 3.4.2 SQL injection (y User-Agent de sqlmap)
+  } else if match(p, r'union(\s|/\*.*?\*/)+(all(\s|/\*.*?\*/)+)?select|\b(or|and)\s+(\d+|\x27[^\x27]*\x27)\s*(=|like)\s*(\d+|\x27[^\x27]*\x27)|\x27\s*(or|and)\s|\x27\s*(--|#)|\bsleep\s*\(\s*\d|\bbenchmark\s*\(|information_schema|\bwaitfor\s+delay|\bpg_sleep\s*\(|\bextractvalue\s*\(|\bupdatexml\s*\(|;\s*(drop|truncate)\s+table|/\*!\d*|\bload_file\s*\(|into\s+(out|dump)file') || match(ua, r'sqlmap') {
+    at = "sqli"
+
+  # 3.4.3 XSS
+  } else if match(p, r'<\s*/?\s*script|javascript\s*:|\bon(error|load|click|mouseover|focus|toggle)\s*=|<\s*(img|svg|iframe|body|input|details|video|audio)[^>]*\bon\w+\s*=|<\s*iframe|<\s*svg|document\.(cookie|location|write)|\balert\s*\(|\bprompt\s*\(') {
+    at = "xss"
+
+  # 3.4.4 Inyección de comandos (y shellshock en cabeceras)
+  } else if match(cmdi_text, r'(;|\|\||&&|\||\x60|\$\()\s*(cat|ls|id|whoami|uname|wget|curl|nc|ncat|bash|sh|ping|echo|sleep|powershell|cmd|python|perl|php|busybox|chmod|rm|ifconfig|netstat|ps|env)\b|\$\{ifs\}|/bin/(ba)?sh|\bcmd(\.exe)?\s*/c|\(\)\s*\{\s*:;\s*\}|\$\(.+\)|\x60[^\x60]+\x60') {
+    at = "command_injection"
+
+  # 3.4.5 Reconocimiento: User-Agent de escáner o ruta típica de escáner
+  } else if match(ua, r'nmap|nikto|zgrab|masscan|dirbuster|gobuster|\bdirb\b|nuclei|wpscan|openvas|acunetix|nessus|zmeu|censys|shodan|netsparker|whatweb|\bffuf\b|feroxbuster') || match(pathl, r'^/(\.env|\.git|\.svn|\.aws|\.ssh|\.ds_store|\.vscode|wp-(login|admin|content|includes)|xmlrpc\.php|phpmyadmin|pma|myadmin|adminer|admin(istrator)?(/|$)|manager/html|server-status|server-info|actuator|console|solr|jenkins|cgi-bin|vendor/phpunit|boaform|hnap1|config\.(php|json|yml)|backup|owa|autodiscover|ecp|remote/login|api/v1/pods|telescope|_profiler)') {
+    at = "recon_scan"
+  }
+}
+
+# ----------------------------------------------------------------------------
+# 4) Tabla MITRE ATT&CK (attack_type -> técnica / táctica)
+# ----------------------------------------------------------------------------
+tech = null
+tact = null
+if at == "brute_force" {
+  tech = "T1110"
+  tact = "Credential Access"
+} else if at == "credential_stuffing" {
+  tech = "T1110.004"
+  tact = "Credential Access"
+} else if at == "recon_scan" {
+  tech = "T1595"
+  tact = "Reconnaissance"
+} else if at == "sqli" || at == "xss" || at == "lfi_rfi" {
+  tech = "T1190"
+  tact = "Initial Access"
+} else if at == "command_injection" {
+  tech = "T1059"
+  tact = "Execution"
+} else if at == "malware_download" {
+  tech = "T1105"
+  tact = "Command and Control"
+} else if at == "file_upload" {
+  tech = "T1505.003"
+  tact = "Persistence"
+} else if at == "post_exploitation_command" {
+  tech = "T1059.004"
+  tact = "Execution"
+}
+
+.attack_type = at
+if tech != null {
+  .mitre_technique = tech
+  .mitre_tactic = tact
+}
+
+# ----------------------------------------------------------------------------
+# 5) (Opcional, desactivado) credential_stuffing por agregación temporal
+#    Requeriría un transform "reduce"/"lua" que cuente usuarios distintos por
+#    src_ip en una ventana (p. ej. > 20 usuarios en 10 min) y reetiquete.
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# 6) Campos auxiliares para el sink (no se indexan: _id e índice diario)
+# ----------------------------------------------------------------------------
+.doc_id = .event_id
+ts = parse_timestamp!(string!(."@timestamp"), "%+")
+.idx = "honeypot-events-" + format_timestamp!(ts, "%Y.%m.%d")

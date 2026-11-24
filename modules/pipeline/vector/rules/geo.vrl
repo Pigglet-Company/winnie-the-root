@@ -1,0 +1,13 @@
+# =============================================================================
+# geo.vrl  -  enriquecimiento GeoIP (solo si hay GeoLite2-City.mmdb)
+# IPs privadas / no encontradas: simplemente no llevan campo "geo".
+# =============================================================================
+rec, err = get_enrichment_table_record("geoip", { "ip": .src_ip })
+if err == null {
+  .geo.country_iso = rec.country_code
+  .geo.country_name = rec.country_name
+  .geo.city = rec.city_name
+  if rec.latitude != null && rec.longitude != null {
+    .geo.location = { "lat": rec.latitude, "lon": rec.longitude }
+  }
+}

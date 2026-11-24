@@ -1,0 +1,6 @@
+# Etapa final SIN GeoIP (degradación elegante: no hay campo "geo").
+transforms:
+  final:
+    type: remap
+    inputs: [classify]
+    source: "."

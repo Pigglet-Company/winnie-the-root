@@ -1,0 +1,122 @@
+# =============================================================================
+# normalize_opencanary.vrl  -  OpenCanary (JSON nativo) -> ESQUEMA COMUN
+#
+# Campos nativos: logtype, logdata{}, src_host, src_port, dst_port, utc_time,
+#                 local_time, node_id.
+#
+# logtype  (opencanary/logger.py)            -> service / event_type
+#   2000  FTP login attempt                  -> ftp    / auth_attempt
+#   8001  MySQL login attempt                -> mysql  / auth_attempt
+#   17001 Redis command                      -> redis  / command
+#   4000/4001 SSH conexión / versión         -> ssh    / connection
+#   4002  SSH login attempt                  -> ssh    / auth_attempt
+#   6001  Telnet login attempt               -> telnet / auth_attempt
+#   3000  HTTP GET                           -> http   / request
+#   3001  HTTP POST login attempt            -> http   / auth_attempt
+#   1000-1006 (arranque, debug, ...)         -> ignorado
+#   resto (>= 2000, p. ej. 5001 port-syn,
+#          18001 tcp-banner)                 -> connection, service según dst_port
+#
+# OpenCanary no devuelve éxito de login (todo es señuelo): auth.success = false.
+# =============================================================================
+raw_line = string!(.message)
+n = object!(parse_json!(raw_line))
+
+lt = int(n.logtype) ?? 0
+ld = object(n.logdata) ?? {}
+dp = int(n.dst_port) ?? 0
+
+by_port = if includes([21, 2121], dp) {
+  "ftp"
+} else if includes([3306, 3307], dp) {
+  "mysql"
+} else if includes([6379, 6380], dp) {
+  "redis"
+} else if includes([22, 2222], dp) {
+  "ssh"
+} else if includes([23, 2223], dp) {
+  "telnet"
+} else if includes([80, 8000, 8080, 8888], dp) {
+  "http"
+} else {
+  ""
+}
+
+et = "ignore"
+svc = ""
+if lt == 2000 {
+  et = "auth_attempt"
+  svc = "ftp"
+} else if lt == 8001 {
+  et = "auth_attempt"
+  svc = "mysql"
+} else if lt == 17001 {
+  et = "command"
+  svc = "redis"
+} else if lt == 4000 || lt == 4001 {
+  et = "connection"
+  svc = "ssh"
+} else if lt == 4002 {
+  et = "auth_attempt"
+  svc = "ssh"
+} else if lt == 6001 {
+  et = "auth_attempt"
+  svc = "telnet"
+} else if lt == 3000 {
+  et = "request"
+  svc = "http"
+} else if lt == 3001 {
+  et = "auth_attempt"
+  svc = "http"
+} else if lt >= 2000 && by_port != "" {
+  et = "connection"
+  svc = by_port
+}
+
+. = {}
+.event_type = et
+
+if et != "ignore" {
+  ts_str = string(n.utc_time) ?? string(n.local_time) ?? ""
+  ts = parse_timestamp!(ts_str, "%Y-%m-%d %H:%M:%S%.f")
+  ."@timestamp" = format_timestamp!(ts, "%Y-%m-%dT%H:%M:%S%.3fZ")
+
+  h = slice!(sha2(raw_line, variant: "SHA-256"), 0, 32)
+  .event_id = slice!(h, 0, 8) + "-" + slice!(h, 8, 12) + "-4" + slice!(h, 13, 16) + "-a" + slice!(h, 17, 20) + "-" + slice!(h, 20, 32)
+
+  .honeypot = "opencanary"
+  .service = svc
+  .src_ip = string!(n.src_host)
+  sp = int(n.src_port) ?? 0
+  if sp > 0 { .src_port = sp }
+  if dp > 0 { .dst_port = dp }
+
+  if et == "auth_attempt" {
+    .auth = {
+      "username": string(ld.USERNAME) ?? "",
+      "password": string(ld.PASSWORD) ?? "",
+      "success": false
+    }
+  }
+
+  if et == "command" {
+    cmd = string(ld.CMD) ?? string(ld.COMMAND) ?? ""
+    args = string(ld.ARGS) ?? ""
+    .command = strip_whitespace(cmd + " " + args)
+  }
+
+  if svc == "http" && (et == "request" || et == "auth_attempt") {
+    ua = string(ld.USERAGENT) ?? ""
+    method = "GET"
+    if lt == 3001 { method = "POST" }
+    .http = {
+      "method": method,
+      "path": string(ld.PATH) ?? "/",
+      "user_agent": ua
+    }
+    host = string(ld.HOSTNAME) ?? ""
+    if host != "" { .http.headers = { "host": host } }
+  }
+
+  .raw = n
+}

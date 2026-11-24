@@ -1,0 +1,157 @@
+# =============================================================================
+# Vector - pipeline principal del módulo C
+#   fuentes (tail) -> normalización (VRL) -> filtro -> clasificación -> [final] -> OpenSearch
+#
+# La etapa "final" (GeoIP o no-op) vive en final_geo.yaml / final_nogeo.yaml;
+# entrypoint.sh elige una según exista /geoip/GeoLite2-City.mmdb.
+# Reglas VRL en ./rules/ (la clasificación está SOLO en rules/classify.vrl).
+# =============================================================================
+data_dir: /var/lib/vector
+
+# ----------------------------------------------------------------- FUENTES ---
+# Globs con "*" para seguir los ficheros rotados (cowrie.json.1, ...): Vector
+# identifica cada fichero por el checksum de su primera línea, así que una
+# rotación no provoca relecturas ni pérdidas.
+sources:
+  src_cowrie:
+    type: file
+    include: ["/logs/cowrie/cowrie.json*"]
+    exclude: ["*.gz"]
+    read_from: beginning
+    max_line_bytes: 1048576
+
+  src_opencanary:
+    type: file
+    include: ["/logs/opencanary/opencanary.log*"]
+    exclude: ["*.gz"]
+    read_from: beginning
+    max_line_bytes: 1048576
+
+  src_web:
+    type: file
+    include: ["/logs/web/web.jsonl*"]
+    exclude: ["*.gz"]
+    read_from: beginning
+    max_line_bytes: 1048576
+
+# ---------------------------------------------------------- TRANSFORMACIONES ---
+# drop_on_error + reroute_dropped: una línea corrupta NO para el pipeline; el
+# evento original va a la salida "<transform>.dropped" -> cola de errores.
+transforms:
+  norm_cowrie:
+    type: remap
+    inputs: [src_cowrie]
+    file: /etc/vector/rules/normalize_cowrie.vrl
+    drop_on_error: true
+    reroute_dropped: true
+
+  # Cowrie solo indica el protocolo (ssh/telnet) en cowrie.session.connect; este
+  # transform recuerda el protocolo por sesión y lo propaga al resto de eventos.
+  cowrie_service:
+    type: lua
+    version: "2"
+    inputs: [norm_cowrie]
+    hooks:
+      process: process
+    source: |
+      sessions = {}
+      session_count = 0
+
+      function process(event, emit)
+        local log = event.log
+        local sid = log.session_id
+        if sid ~= nil then
+          if log.service ~= nil then
+            if sessions[sid] == nil then
+              session_count = session_count + 1
+            end
+            sessions[sid] = log.service
+          else
+            log.service = sessions[sid] or "ssh"
+          end
+          if log.event_type == "session_close" and sessions[sid] ~= nil then
+            sessions[sid] = nil
+            session_count = session_count - 1
+          end
+          if session_count > 200000 then   -- salvaguarda de memoria
+            sessions = {}
+            session_count = 0
+          end
+        end
+        emit(event)
+      end
+
+  norm_opencanary:
+    type: remap
+    inputs: [src_opencanary]
+    file: /etc/vector/rules/normalize_opencanary.vrl
+    drop_on_error: true
+    reroute_dropped: true
+
+  norm_web:
+    type: remap
+    inputs: [src_web]
+    file: /etc/vector/rules/normalize_web.vrl
+    drop_on_error: true
+    reroute_dropped: true
+
+  # Descarta los eventos nativos sin interés (event_type == "ignore")
+  drop_ignored:
+    type: filter
+    inputs: [cowrie_service, norm_opencanary, norm_web]
+    condition: '.event_type != "ignore"'
+
+  # attack_type + MITRE (reglas editables en rules/classify.vrl)
+  classify:
+    type: remap
+    inputs: [drop_ignored]
+    file: /etc/vector/rules/classify.vrl
+    drop_on_error: true
+    reroute_dropped: true
+
+  # (la transformación "final" se define en final_geo.yaml o final_nogeo.yaml)
+
+# ------------------------------------------------------------------ SINKS ----
+sinks:
+  opensearch:
+    type: elasticsearch
+    inputs: [final]
+    endpoints: ["${OPENSEARCH_URL:-http://pl-opensearch:9200}"]
+    api_version: v8            # sin _type; compatible con OpenSearch 2.x
+    mode: bulk
+    bulk:
+      action: index
+      index: "{{ idx }}"       # honeypot-events-YYYY.MM.DD (fecha del evento, ver classify.vrl)
+    id_key: doc_id             # _id = event_id  -> reprocesar no duplica
+    encoding:
+      except_fields: ["idx"]
+    auth:
+      strategy: basic          # ignorado por OpenSearch en modo dev (sin seguridad)
+      user: "${OPENSEARCH_USER:-admin}"
+      password: "${OPENSEARCH_PASSWORD:-}"
+    tls:
+      verify_certificate: false   # red interna + certificados de demo en modo prod
+      verify_hostname: false
+    batch:
+      max_events: 500
+      timeout_secs: 2
+    acknowledgements:
+      enabled: true            # el checkpoint avanza solo tras indexar con éxito
+    buffer:                    # cola en disco: si OpenSearch cae, nada se pierde
+      type: disk
+      max_size: 536870912
+      when_full: block
+    healthcheck:
+      enabled: true
+
+  # Cola de errores: líneas ilegibles o eventos que no cumplen el esquema mínimo
+  dead_letter:
+    type: file
+    inputs:
+      - norm_cowrie.dropped
+      - norm_opencanary.dropped
+      - norm_web.dropped
+      - classify.dropped
+    path: /var/lib/vector/dead_letter/errors-%Y-%m-%d.jsonl
+    encoding:
+      codec: json

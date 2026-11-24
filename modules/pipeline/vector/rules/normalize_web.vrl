@@ -1,0 +1,30 @@
+# =============================================================================
+# normalize_web.vrl  -  web señuelo (módulo B) -> validación del ESQUEMA COMUN
+#
+# El módulo B ya escribe el esquema común; aquí solo se garantiza:
+#   - @timestamp ISO 8601 UTC con milisegundos
+#   - honeypot = "web", service = "http"
+#   - event_id con formato UUID (si falta, se deriva del hash de la línea)
+#   - http.body truncado a 8 KB
+# =============================================================================
+raw_line = string!(.message)
+n = object!(parse_json!(raw_line))
+
+ts = parse_timestamp!(string!(n."@timestamp"), "%+")
+
+. = n
+."@timestamp" = format_timestamp!(ts, "%Y-%m-%dT%H:%M:%S%.3fZ")
+.honeypot = "web"
+.service = "http"
+.event_type = string(.event_type) ?? "request"
+
+eid = string(.event_id) ?? ""
+if length(eid) != 36 {
+  h = slice!(sha2(raw_line, variant: "SHA-256"), 0, 32)
+  .event_id = slice!(h, 0, 8) + "-" + slice!(h, 8, 12) + "-4" + slice!(h, 13, 16) + "-a" + slice!(h, 17, 20) + "-" + slice!(h, 20, 32)
+}
+
+b = string(.http.body) ?? ""
+if length(b) > 8192 {
+  .http.body = truncate(b, 8192)
+}

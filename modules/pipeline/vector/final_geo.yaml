@@ -1,0 +1,13 @@
+# Etapa final CON GeoIP (se usa si existe /geoip/GeoLite2-City.mmdb).
+enrichment_tables:
+  geoip:
+    type: geoip
+    path: /geoip/GeoLite2-City.mmdb
+    locale: en
+
+transforms:
+  final:
+    type: remap
+    inputs: [classify]
+    file: /etc/vector/rules/geo.vrl
+    drop_on_error: false
