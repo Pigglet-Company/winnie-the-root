@@ -1,0 +1,38 @@
+# Módulo B: señuelo web. Requiere haber ejecutado scripts/init.sh (red y volumen externos).
+services:
+  hp-web:
+    build:
+      context: .
+    image: hp-web:1.0.0
+    container_name: hp-web
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "${WEB_HOST_PORT:-8080}:8080"
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    cpus: 0.50
+    mem_limit: 256m
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=64m,mode=1777,noexec,nosuid,nodev
+    volumes:
+      - honeylogs:/logs                 # escribe /logs/web/web.jsonl
+      - hp_web_uploads:/uploads         # volumen AISLADO: solo lo monta este contenedor
+    networks:
+      - honeynet
+
+networks:
+  honeynet:
+    external: true
+
+volumes:
+  honeylogs:
+    external: true
+  hp_web_uploads:
+    name: hp-web-uploads
