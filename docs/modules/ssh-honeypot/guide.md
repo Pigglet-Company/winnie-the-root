@@ -1,5 +1,7 @@
 # Módulo A — SSH/Telnet honeypot (Cowrie + OpenCanary)
 
+Los comandos que usan rutas relativas a este módulo se ejecutan desde `modules/ssh-honeypot/`, salvo donde se indique que el punto de partida es la raíz del repositorio. Consulta los [recursos compartidos](../../architecture.md#first-run).
+
 Honeypots defensivos para el TFM. Registran intentos de login, comandos, descargas y sesiones
 en el volumen compartido `honeylogs`. **Todo es simulado**: nada de lo que escribe el atacante se ejecuta.
 
@@ -15,15 +17,11 @@ en el volumen compartido `honeylogs`. **Todo es simulado**: nada de lo que escri
 Docker + Compose v2. Para el test: `sudo apt install openssh-client sshpass jq`.
 El firewall de salida solo funciona en **Linux** (iptables). En Docker Desktop (Mac/Windows) no aplica.
 
-## 2. Arranque (Fase 1, local)
+## 2. Arranque (Fase 1, red aislada)
 ```bash
-# Desde la raíz del repo (lo aporta integración). Alternativa manual idéntica:
-docker network create --subnet 172.30.0.0/24 honeynet
-docker volume create honeylogs
-docker run --rm -v honeylogs:/logs busybox sh -c "mkdir -p /logs/cowrie /logs/opencanary /logs/web && chmod -R 0777 /logs"
+# Prepara los recursos compartidos según la guía de arquitectura.
 
 cd modules/ssh-honeypot
-cp .env.example .env
 docker compose up -d --build
 docker compose ps          # ambos "Up (healthy)" en ~40 s
 ```
@@ -106,7 +104,9 @@ Nota: las reglas se pierden al reiniciar; en el VPS las persiste el servicio `ho
 - **El tag de imagen no existe**: `docker pull cowrie/cowrie:<tag>` con uno válido y cámbialo en `compose.yml`.
 - **`smoke_ssh.sh` falla por permisos de Docker**: ejecútalo con un usuario del grupo `docker` o con `sudo`.
 
-## 8. Fase 2 — despliegue en VPS (Ubuntu 22.04/24.04 limpio)
+## 8. Diseño de despliegue en VPS (pendiente de validación)
+
+El script presupone un inicializador y una plantilla de entorno ausentes en este checkout. Revisa los riesgos de cambios en SSH y firewall en el [análisis](../../architecture-review.md) antes de considerar este flujo.
 Copia el repo al VPS (p. ej. `/opt/honeypot-tfm`) y, **con tu clave pública ya instalada**:
 ```bash
 sudo modules/ssh-honeypot/deploy/setup.sh prepare --admin-user TU_USUARIO [--wireguard]
@@ -133,5 +133,5 @@ Los puertos publicados por Docker **saltan las reglas de ufw**: ufw protege solo
 ## 9. Limitaciones conocidas
 - El `fs.pickle` por defecto de Cowrie contiene el usuario `phil`, una huella conocida de honeypot. Para un despliegue más creíble
   genera uno propio con `bin/fsctl` desde un checkout de Cowrie y móntalo (línea comentada en `compose.yml`).
-- Rotación: Cowrie rota a diario (5 días en el VPS); OpenCanary rota a 50 MB × 5. Ver `NOTAS_CONTRATO.md`.
+- Rotación: Cowrie rota a diario (5 días en el VPS); OpenCanary rota a 50 MB × 5. Ver [notas de integración](integration-notes.md).
 - `samples/` son sintéticos con el formato nativo exacto; sustitúyelos por capturas reales tras la primera ejecución.

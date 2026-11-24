@@ -1,5 +1,7 @@
 # NOTAS_CONTRATO.md — Módulo C (pipeline)
 
+Notas históricas de entrega. Para el estado actual y los bloqueos de integración, consulta el [análisis](../../architecture-review.md).
+
 ## Estado de verificación (leer primero)
 Se validó en el entorno de desarrollo: sintaxis de YAML/JSON/bash/Python, generador de datos
 (6002 eventos indexables, 7 líneas corruptas) y coherencia interna del NDJSON de dashboards.
@@ -36,7 +38,7 @@ alguna función VRL o de la sintaxis de `extract_from: <transform>.dropped`, aju
     elegir el tenant **Global** al entrar. Dashboards solo escucha en 127.0.0.1 (acceder por túnel SSH).
 11. **GeoIP**: la descarga usa la URL con `license_key` de MaxMind; si MaxMind la restringe, usar `geoipupdate`
     y dejar el .mmdb en `geoip/`.
-12. `modules/pipeline/samples/` contiene entradas nativas de ejemplo, no salida normalizada (ver su README).
+12. `modules/pipeline/samples/` contiene entradas nativas de ejemplo, no salida normalizada (ver [muestras](samples.md)).
 
 ## Dudas para integración
 - ¿Debe C crear `honeylogs` si no existe? Se asume que lo hace `scripts/init.sh`.

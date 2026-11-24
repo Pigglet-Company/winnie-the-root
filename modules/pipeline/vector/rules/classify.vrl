@@ -16,7 +16,7 @@
 #   por event_type:  auth_attempt -> brute_force | file_upload | file_download
 #                    command -> malware_download / post_exploitation_command
 #                    connection -> recon_scan | request -> reglas web (3.4)
-#   web: lfi_rfi > sqli > xss > command_injection > recon_scan > other
+#   web: command_injection > lfi_rfi > sqli > xss > recon_scan > other
 #
 # DECISIONES: todo login (fallido o no) se etiqueta brute_force (cada intento
 # es un intento de credenciales). credential_stuffing (T1110.004) está previsto
@@ -26,12 +26,13 @@
 # ----------------------------------------------------------------------------
 # 1) Validación mínima del esquema: lo que falle va a la cola de errores
 # ----------------------------------------------------------------------------
-_ = string!(.event_id)
-_ = string!(."@timestamp")
-_ = string!(.honeypot)
-_ = string!(.service)
+.event_id = string!(.event_id)
+."@timestamp" = string!(."@timestamp")
+.honeypot = string!(.honeypot)
+.service = string!(.service)
 et = string!(.event_type)
-_ = ip_pton!(string!(.src_ip))
+_, ip_error = ip_pton(string!(.src_ip))
+assert!(ip_error == null, "src_ip inválida")
 
 # ----------------------------------------------------------------------------
 # 2) Preparación de textos a inspeccionar
@@ -43,8 +44,8 @@ body = string(.http.body) ?? ""
 ua = downcase(string(.http.user_agent) ?? "")
 
 joined = path + " " + query + " " + body
-dec = decode_percent(joined) ?? joined
-dec = decode_percent(dec) ?? dec            # doble codificación (%2527)
+dec = decode_percent(joined)
+dec = decode_percent(dec)                   # doble codificación (%2527)
 p = downcase(replace(dec, "+", " "))        # texto de payload web
 pathl = downcase(path)
 cmdi_text = p + " " + ua                    # incluye el User-Agent (shellshock)
@@ -81,21 +82,21 @@ if et == "auth_attempt" {
 } else if et == "request" {
   # 3.4 Peticiones web
 
-  # 3.4.1 LFI / RFI: path traversal, ficheros sensibles, wrappers, include remoto
-  if match(p, r'\.\./|\.\.\\|/etc/(passwd|shadow|group|hosts)|/proc/self/|/windows/win\.ini|boot\.ini|(php|file|data|expect|zip|phar|gopher|dict)://|(include|require|page|file|path|template|url|src|inc|doc|load)=\s*(https?|ftp)://') {
+  # 3.4.1 Inyección de comandos (y shellshock en cabeceras)
+  if match(cmdi_text, r'(;|\|\||&&|\||\x60|\$\()\s*(cat|ls|id|whoami|uname|wget|curl|nc|ncat|bash|sh|ping|echo|sleep|powershell|cmd|python|perl|php|busybox|chmod|rm|ifconfig|netstat|ps|env)\b|\$\{ifs\}|/bin/(ba)?sh|\bcmd(\.exe)?\s*/c|\(\)\s*\{\s*:;\s*\}|\$\(.+\)|\x60[^\x60]+\x60') {
+    at = "command_injection"
+
+  # 3.4.2 LFI / RFI: path traversal, ficheros sensibles, wrappers, include remoto
+  } else if match(p, r'\.\./|\.\.\\|/etc/(passwd|shadow|group|hosts)|/proc/self/|/windows/win\.ini|boot\.ini|(php|file|data|expect|zip|phar|gopher|dict)://|(include|require|page|file|path|template|url|src|inc|doc|load)=\s*(https?|ftp)://') {
     at = "lfi_rfi"
 
-  # 3.4.2 SQL injection (y User-Agent de sqlmap)
+  # 3.4.3 SQL injection (y User-Agent de sqlmap)
   } else if match(p, r'union(\s|/\*.*?\*/)+(all(\s|/\*.*?\*/)+)?select|\b(or|and)\s+(\d+|\x27[^\x27]*\x27)\s*(=|like)\s*(\d+|\x27[^\x27]*\x27)|\x27\s*(or|and)\s|\x27\s*(--|#)|\bsleep\s*\(\s*\d|\bbenchmark\s*\(|information_schema|\bwaitfor\s+delay|\bpg_sleep\s*\(|\bextractvalue\s*\(|\bupdatexml\s*\(|;\s*(drop|truncate)\s+table|/\*!\d*|\bload_file\s*\(|into\s+(out|dump)file') || match(ua, r'sqlmap') {
     at = "sqli"
 
-  # 3.4.3 XSS
+  # 3.4.4 XSS
   } else if match(p, r'<\s*/?\s*script|javascript\s*:|\bon(error|load|click|mouseover|focus|toggle)\s*=|<\s*(img|svg|iframe|body|input|details|video|audio)[^>]*\bon\w+\s*=|<\s*iframe|<\s*svg|document\.(cookie|location|write)|\balert\s*\(|\bprompt\s*\(') {
     at = "xss"
-
-  # 3.4.4 Inyección de comandos (y shellshock en cabeceras)
-  } else if match(cmdi_text, r'(;|\|\||&&|\||\x60|\$\()\s*(cat|ls|id|whoami|uname|wget|curl|nc|ncat|bash|sh|ping|echo|sleep|powershell|cmd|python|perl|php|busybox|chmod|rm|ifconfig|netstat|ps|env)\b|\$\{ifs\}|/bin/(ba)?sh|\bcmd(\.exe)?\s*/c|\(\)\s*\{\s*:;\s*\}|\$\(.+\)|\x60[^\x60]+\x60') {
-    at = "command_injection"
 
   # 3.4.5 Reconocimiento: User-Agent de escáner o ruta típica de escáner
   } else if match(ua, r'nmap|nikto|zgrab|masscan|dirbuster|gobuster|\bdirb\b|nuclei|wpscan|openvas|acunetix|nessus|zmeu|censys|shodan|netsparker|whatweb|\bffuf\b|feroxbuster') || match(pathl, r'^/(\.env|\.git|\.svn|\.aws|\.ssh|\.ds_store|\.vscode|wp-(login|admin|content|includes)|xmlrpc\.php|phpmyadmin|pma|myadmin|adminer|admin(istrator)?(/|$)|manager/html|server-status|server-info|actuator|console|solr|jenkins|cgi-bin|vendor/phpunit|boaform|hnap1|config\.(php|json|yml)|backup|owa|autodiscover|ecp|remote/login|api/v1/pods|telescope|_profiler)') {
@@ -150,5 +151,5 @@ if tech != null {
 # 6) Campos auxiliares para el sink (no se indexan: _id e índice diario)
 # ----------------------------------------------------------------------------
 .doc_id = .event_id
-ts = parse_timestamp!(string!(."@timestamp"), "%+")
+ts = parse_timestamp!(."@timestamp", "%+")
 .idx = "honeypot-events-" + format_timestamp!(ts, "%Y.%m.%d")
