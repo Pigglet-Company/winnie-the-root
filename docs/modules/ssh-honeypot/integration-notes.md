@@ -1,5 +1,7 @@
 # NOTAS_CONTRATO.md — Módulo A (ssh-honeypot)
 
+Notas históricas de entrega. Para el estado actual y los bloqueos de integración, consulta el [análisis](../../architecture-review.md).
+
 No he modificado el contrato. Suposiciones y dudas:
 
 ## Verificar al primer arranque (no he podido ejecutar Docker al escribir esto)

@@ -1,5 +1,7 @@
 # Módulo C — Pipeline (Vector + OpenSearch + Dashboards)
 
+Los comandos que usan rutas relativas a este módulo se ejecutan desde `modules/pipeline/`, salvo donde se indique que el punto de partida es la raíz del repositorio. Consulta los [recursos compartidos](../../architecture.md#first-run).
+
 Lee los logs de los honeypots (volumen `honeylogs`, solo lectura), los **normaliza** al esquema común,
 los **enriquece** (GeoIP opcional), los **clasifica** (`attack_type` + MITRE ATT&CK) y los indexa en
 OpenSearch (`honeypot-events-YYYY.MM.DD`, alias `honeypot-events`, retención 30 días). Incluye dashboards.
@@ -11,12 +13,12 @@ Cowrie / OpenCanary / Web  ->  Vector (tail -> VRL -> clasificar -> geo) -> Open
 
 ## Requisitos
 Docker + Compose v2, `python3` y `curl` en el host. Linux: `sudo sysctl -w vm.max_map_count=262144`.
-Preparación: `cp .env.example .env` (ajusta si quieres).
+Los valores por defecto se declaran en Compose. Crea un `.env` local únicamente para sobrescribirlos.
 
 ## 1. Modo dev con datos sintéticos (sin módulos A y B)
 ```bash
 cd modules/pipeline
-cp .env.example .env
+docker volume create honeylogs                # volumen externo declarado por el modelo base
 python3 tools/generate_sample_data.py          # ./sample-logs (≈6000 eventos, 7 días)
 docker compose -f compose.yml -f compose.dev.yml up -d
 ./scripts/import_dashboards.sh                 # espera a Dashboards e importa
@@ -26,17 +28,18 @@ Abre <http://localhost:5601/app/dashboards#/view/hp-dashboard> (rango de tiempo:
 
 ## 2. Modo con logs reales (A y B escribiendo en `honeylogs`)
 ```bash
-./scripts/init.sh            # en la raíz del repo (crea honeynet y honeylogs)
+# Prepara los recursos compartidos según la guía de arquitectura.
 cd modules/pipeline && docker compose up -d
 ./scripts/import_dashboards.sh
 ```
 Si Compose se queja de que `honeylogs` no existe: `docker volume create honeylogs`.
 
 ## 3. Seguridad: dev / prod
+
+El perfil `prod` conserva credenciales de administración y TLS de demostración. Consulta el [análisis](../../architecture-review.md) para evaluar su uso con datos reales.
 `SECURITY_MODE` en `.env`: `dev` (sin autenticación) o `prod` (autenticación + TLS interno). En prod,
-define `OPENSEARCH_ADMIN_PASSWORD` y entra a Dashboards con `admin` (tenant **Global**). Tras cambiar de
-modo: `docker compose down -v` (el volumen de datos cambia de esquema de seguridad). Detalles y límites en
-`NOTAS_CONTRATO.md`. Dashboards solo escucha en `127.0.0.1:5601`; en un VPS accede con
+define `OPENSEARCH_ADMIN_PASSWORD` y entra a Dashboards con `admin` (tenant **Global**). Usa instalaciones desechables distintas para validar cada modo, pues el volumen de datos cambia de esquema de seguridad. Detalles y límites en
+[notas de integración](integration-notes.md). Dashboards solo escucha en `127.0.0.1:5601`; en un VPS accede con
 `ssh -L 5601:127.0.0.1:5601 usuario@vps`. El heap se ajusta con `OPENSEARCH_HEAP` (por defecto `1g`).
 
 ## 4. GeoIP (opcional)

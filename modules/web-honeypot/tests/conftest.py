@@ -8,6 +8,7 @@ from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.types import Receive, Scope, Send
 
 from app.config import Settings
 from app.main import create_app
@@ -29,10 +30,15 @@ class Honeypot:
         )
         self.settings = dataclasses.replace(base, **overrides)
         self.app = create_app(self.settings)
+
+        async def app_with_test_peer(scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] == "http":
+                scope = {**scope, "client": ("203.0.113.5", 51234)}
+            await self.app(scope, receive, send)
+
         self.client = TestClient(
-            self.app,
+            app_with_test_peer,
             base_url="http://intranet.test:8080",
-            client=("203.0.113.5", 51234),
             follow_redirects=False,
         )
 
@@ -53,6 +59,7 @@ class Honeypot:
         return sorted(p for p in d.iterdir()) if d.exists() else []
 
     def close(self) -> None:
+        self.client.close()
         self.app.state.events.close()
 
 

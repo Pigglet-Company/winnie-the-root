@@ -1,0 +1,60 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: modules/web-honeypot/requirements*.txt
+      - name: Install checks and web test dependencies
+        run: python -m pip install ruff==0.11.13 -r modules/web-honeypot/requirements-dev.txt
+      - name: Lint Python
+        run: ruff check modules tests
+      - name: Check shell syntax
+        run: |
+          while IFS= read -r -d '' script; do
+            if head -n 1 "$script" | grep -q bash; then
+              bash -n "$script"
+            else
+              sh -n "$script"
+            fi
+          done < <(find modules -name '*.sh' -print0)
+      - name: Check fixture contract
+        run: python -m unittest discover -s tests -v
+      - name: Check generated dashboard
+        working-directory: modules/pipeline
+        run: |
+          python tools/build_dashboards.py
+          git diff --exit-code -- dashboards/honeypot.ndjson
+      - name: Run web unit tests
+        working-directory: modules/web-honeypot
+        run: python -m pytest -q
+
+  containers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose models
+        run: |
+          docker compose -f modules/ssh-honeypot/compose.yml config --quiet
+          docker compose -f modules/web-honeypot/compose.yml config --quiet
+          docker compose -f modules/pipeline/compose.yml config --quiet
+          docker compose -f modules/pipeline/compose.yml -f modules/pipeline/compose.dev.yml config --quiet
+          SECURITY_MODE=prod docker compose -f modules/pipeline/compose.yml config --quiet
+      - name: Run Vector tests
+        run: bash modules/pipeline/tests/run_vector_tests.sh

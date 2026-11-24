@@ -1,5 +1,7 @@
 # NOTAS_CONTRATO.md – Módulo B (web-honeypot)
 
+Notas históricas de entrega. Para el estado actual y los bloqueos de integración, consulta el [análisis](../../architecture-review.md).
+
 ## Estado de verificación (importante)
 - Entorno de desarrollo SIN red: no pude instalar FastAPI/pytest ni ejecutar Docker o `jq`.
 - **Ejecutado y en verde:** 17 tests de `tests/test_core.py` (eventos, logger con rotación, rate limit, sesiones,
