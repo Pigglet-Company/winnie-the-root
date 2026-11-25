@@ -5,7 +5,7 @@ arrancarlo, saber qué debería ver y qué falta todavía. Los detalles técnico
 [README.md](../README.md), [RUN.md](RUN.md) y las guías de cada módulo.
 
 > **Estado descrito:** `main` en `31216e9`, más las PR pendientes de W02 (fixture de pruebas web
-> y escape de `/comment`) y W01 (arranque fiable). Actualizado el 25-11-2026.
+> y escape de `/comment`), W01 (arranque fiable) y W03 (reglas de clasificación). Actualizado el 25-11-2026.
 > Si este bloque no coincide con el último trabajo cerrado, la guía está desactualizada.
 
 ## 1. Qué es Winnie, en una frase
@@ -89,8 +89,8 @@ No arranca ningún señuelo, así que no hay nada expuesto.
 ver gráficos con ataques ficticios por tipo y servicio. `e2e_check.sh` debe terminar sin
 errores.
 
-**Qué pasa hoy (sin W03):** el clasificador de Vector **no compila** en `main` (ver §5). Lo más
-probable es que `pl-vector` no arranque y el panel quede vacío. Diagnóstico: `docker logs pl-vector`.
+Si el panel queda vacío, mira `docker logs pl-vector`. En `main` sin la PR de W03 el clasificador
+no compila y `pl-vector` no arranca.
 
 ### Opción 2 · Sistema completo
 
@@ -132,18 +132,21 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 | Registro de cada petición web como una línea JSON con identificador único | `docker exec hp-web tail /logs/web/web.jsonl` | Verificado por pruebas (W02) |
 | La IP del atacante se toma de la conexión real; cabeceras como `X-Forwarded-For` solo se aceptan si se activa `TRUST_PROXY` | Suite web | Verificado (W02) |
 | `/comment` muestra el comentario **escapado** (inofensivo) por defecto; `COMMENT_REFLECT_RAW=true` activa el fallo XSS de laboratorio | Envía `<script>alert(1)</script>` en <http://localhost:8080/comment> | Verificado (W02) |
-| Datos de ejemplo y panel con 19 objetos (gráficos, tablas, búsqueda guardada) | Opción 1 | El panel se regenera idéntico; los datos **no llegan** mientras Vector no compile |
-| Clasificación de ataques (SQLi, XSS, fuerza bruta…) con mapeo MITRE ATT&CK | Panel, campo `attack_type` | **Roto en `main`**: lo arregla W03 |
+| Datos de ejemplo y panel con 19 objetos (gráficos, tablas, búsqueda guardada) | Opción 1 | El panel se regenera idéntico; con W03 los 6001 eventos de ejemplo se clasifican igual que en la última versión validada |
+| Clasificación de ataques (SQLi, XSS, fuerza bruta…) con mapeo MITRE ATT&CK | Panel, campos `attack_type` y `rule.id` | Verificada sin Docker con Vector 0.43.1 (W03): 42 casos, incluidos solapes y controles inocuos |
+| Cada evento dice qué regla y qué versión lo clasificó; el hecho (un login, un comando Redis, una descarga) se guarda aparte de su interpretación ATT&CK | Campos `rule.version`, `rule.id`, `rule.matches` | Verificado (W03); se puede volver a la versión anterior con un comando ([guía](../modules/pipeline/README.md#reglas-versiones-y-vuelta-atrás)) |
+| Las comprobaciones internas de salud de los señuelos ya no aparecen como «escaneos» | Panel: menos `recon_scan` en un sistema parado | Verificado por pruebas (W03) |
 
 ## 5. Problemas conocidos del estado actual
 
 | Problema | Qué notarás | Se arregla en |
 |---|---|---|
 | El instalador del VPS (`deploy/setup.sh`) no se ha ensayado en una máquina real | Puede fallar o dejar SSH/firewall a medias; úsalo solo en una máquina desechable | Ensayo autorizado en máquina desechable (pendiente) |
-| El clasificador de Vector no compila | Panel vacío, CI en rojo | W03 |
+| La rama GeoIP (mapa por país) no se ha probado: falta la base de datos MaxMind autorizada | El mapa del panel queda vacío; el resto funciona | Ensayo con MMDB autorizada (pendiente) |
+| Un comando Redis se etiqueta como «comando tras intrusión» (T1059.004) aunque el señuelo solo lo emula | La técnica MITRE exagera lo ocurrido | Pendiente de decisión (diseño V2) |
 | No existe una lista de proxies autorizados (solo `TRUST_PROXY` sí/no) | Prueba `xfailed` en la suite web | Pendiente de decisión (diseño V2) |
 | El volumen de registros tiene permisos 0777 | Cualquier contenedor puede escribir los registros de otro | W04 |
-| CI en rojo desde la PR #6 | Marca roja en GitHub | W02 (pruebas web) + W03 (Vector) |
+| CI en rojo desde la PR #6 | Marca roja en GitHub | Se corrige al integrar las PR de W02 y W03 |
 
 ## 6. Hacia dónde va
 
@@ -152,7 +155,7 @@ El contrato completo está en [design.md](design.md). Resumen:
 | Etapa | Unidades | Qué aportará respecto a hoy |
 |---|---|---|
 | **Arranque fiable** | W01 ✔ (en PR) | Un checkout limpio arranca con un comando, escucha solo en `localhost` por defecto, valida requisitos antes de empezar y `down.sh` informa de errores reales |
-| **Web y reglas** | W02 ✔ (en PR), W03 | Pruebas web en verde; clasificador que compila con casos positivos y negativos |
+| **Web y reglas** | W02 ✔ (en PR), W03 ✔ (en PR) | Pruebas web en verde; clasificador que compila con casos positivos y negativos |
 | **Contención** | W04 | Cada servicio escribe solo en su sitio, con cuotas; un señuelo comprometido no contamina a los demás |
 | **Contabilidad** | W05 | Recuentos exactos de eventos por fuente: se sabe si se perdió algo |
 | **Entrega académica (TFM)** | W06 | Una segunda persona produce una interacción ficticia, la sigue hasta el panel y explica la clasificación y cualquier hueco |
@@ -188,6 +191,7 @@ El contrato completo está en [design.md](design.md). Resumen:
 | **OpenCanary** | Programa que imita servicios como FTP, MySQL o Redis y avisa cuando alguien se conecta (pieza A). |
 | **FastAPI** | Herramienta de Python con la que está hecha la intranet web falsa (pieza B). |
 | **Vector** | Programa «cartero» de la pieza C. Lee los ficheros de registro de los señuelos, los ordena en un formato común, los **clasifica** (p. ej. «esto es una inyección SQL») y los entrega a OpenSearch. Sus reglas están escritas en un lenguaje propio llamado **VRL**. |
+| **Regla versionada** | Cada clasificación indica qué regla la decidió y en qué versión (`rule.id`, `rule.version`). Si una regla nueva clasifica peor, se vuelve a la versión anterior y se compara con su *baseline*: el recuento esperado sobre los datos de ejemplo. |
 | **OpenSearch** | Base de datos especializada en guardar y buscar muchos eventos rápidamente (pieza C). Escucha en el puerto 9200, solo dentro de Docker. |
 | **OpenSearch Dashboards** | La web con gráficos y tablas para explorar los eventos guardados (<http://localhost:5601>). |
 | **Pipeline** | La cadena completa de procesamiento: señuelo → registro → Vector → OpenSearch → Dashboards. |

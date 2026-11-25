@@ -51,13 +51,45 @@ clic en un valor → filtro). Filtros: selector de fechas, y controles de servic
 Si algún panel pide campos, refresca el index pattern (Dashboards Management → Index patterns).
 
 ## 6. Ampliar las reglas de clasificación
-Todo está en **`vector/rules/classify.vrl`** (comentado): añade una alternativa a la regex de la regla, o un
-nuevo `else if match(...)` con su `attack_type`, y su par técnica/táctica en la tabla MITRE. Añade un caso en
-`vector/tests.yaml` y ejecuta:
+Todo está en **`vector/rules/classify.vrl`** (comentado). Cada evento conserva el **hecho** observado
+(`event_type`, `service`, `command`, `file.*`) y recibe aparte la **interpretación** ATT&CK (`attack_type`,
+`mitre_*`) junto a la regla que la produjo:
+
+| Campo | Significado |
+|---|---|
+| `rule.ruleset` / `rule.version` | Conjunto y versión de reglas (`winnie-legacy` / `RULES_VERSION`) |
+| `rule.id` | Regla que decide `attack_type` (p. ej. `web.sqli`, `auth.login_attempt`); ausente si es `other` |
+| `rule.matches` | Todas las reglas web que coinciden, en orden de precedencia (solapamientos) |
+
+Precedencia web: `command_injection > lfi_rfi > sqli > xss > recon_scan`. Así `?host=1;cat /etc/passwd`
+es `command_injection` y `rule.matches` conserva también `web.lfi_rfi`. Las conexiones desde loopback
+(healthchecks de los contenedores) son `connection.sensor_health` con `attack_type=other`.
+
+Para cambiar una regla: edítala, sube `RULES_VERSION`, añade casos positivos, negativos y de solape en
+`vector/tests.yaml` y regenera el baseline:
 ```bash
-./tests/run_vector_tests.sh        # vector test (casos positivos y negativos)
+./tests/run_vector_tests.sh             # vector test (casos positivos, negativos, solape e inocuos)
+./tests/classify_samples.sh --write     # nuevo vector/baseline/winnie-legacy-<versión>.json; revisa el diff
+./tests/classify_samples.sh             # compara las muestras de los paneles con el baseline (lo hace CI)
 docker compose restart pl-vector
 ```
+`classify_samples.sh` usa la imagen fijada de Vector con Docker, o `VECTOR_BIN=<binario>` sin Docker.
+
+### Reglas: versiones y vuelta atrás
+
+| Versión | Revisión | Notas |
+|---|---|---|
+| 1.1.0 | esta rama (W03) | Compila con Vector 0.43.1; añade `rule.*`, precedencia contextual y salud por loopback |
+| 1.0.0 | `c81fdf0` | Última revisión validada antes de W03; mismos `attack_type` sobre las muestras, sin `rule.*` |
+
+Volver a una versión conocida (los datos ya indexados se conservan):
+```bash
+git checkout c81fdf0 -- modules/pipeline/vector/rules/classify.vrl
+docker compose restart pl-vector
+```
+Los dos baselines (`vector/baseline/winnie-legacy-1.0.0.json` y `-1.1.0.json`) muestran que la vuelta atrás
+no cambia ningún recuento por `attack_type`. Los tests de `vector/tests.yaml` que comprueban `rule.*` fallarán
+con 1.0.0: es lo esperado.
 Los eventos ya indexados no se reclasifican (borra el índice y reinicia con `docker compose down -v` si necesitas
 reprocesar; el `_id` determinista evita duplicados al releer).
 

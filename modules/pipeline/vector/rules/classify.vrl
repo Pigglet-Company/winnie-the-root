@@ -1,22 +1,33 @@
 # =============================================================================
 # classify.vrl  -  UNICO fichero de reglas de clasificación (contrato §7)
 #
-# Añade a cada evento:  attack_type, mitre_technique, mitre_tactic
+# Añade a cada evento:  attack_type, mitre_technique, mitre_tactic (baseline legacy
+# de los paneles) y rule{ruleset, version, id, matches}: la interpretación ATT&CK es
+# una anotación de esta regla versionada, no un hecho observado. El hecho sigue en
+# event_type / service / command / file.* / http.*.
+#
+# VERSIÓN: RULES_VERSION (abajo). Súbela en cada cambio de regla y anótala en
+# ../../README.md («Reglas: versiones y vuelta atrás»).
 #
 # CÓMO AMPLIAR
 #   * Nueva firma:   añade una alternativa "|nuevo_patron" a la regex de la
 #                    regla (sección 3) o un nuevo "else if match(...)".
 #   * Nuevo tipo:    asigna un valor nuevo a `at` y añade su par técnica/táctica
 #                    en la sección 4 (tabla MITRE).
-#   * Probar:        añade un caso en ../tests.yaml y ejecuta tests/run_vector_tests.sh
+#   * Probar:        añade un caso en ../tests.yaml y ejecuta tests/run_vector_tests.sh;
+#                    tests/classify_samples.sh compara con el baseline de las muestras
 #   * Las regex usan sintaxis Rust (sin lookahead). \x27 = apóstrofo, \x60 = acento grave.
 #   * Los textos web ya llegan en minúsculas y con %xx decodificado (doble pasada).
 #
 # PRECEDENCIA (la primera regla que casa gana):
 #   por event_type:  auth_attempt -> brute_force | file_upload | file_download
 #                    command -> malware_download / post_exploitation_command
-#                    connection -> recon_scan | request -> reglas web (3.4)
-#   web: lfi_rfi > sqli > xss > command_injection > recon_scan > other
+#                    connection -> recon_scan, salvo loopback del propio sensor
+#                    (healthcheck: other, sin MITRE) | request -> reglas web (3.4)
+#   web: command_injection > lfi_rfi > sqli > xss > recon_scan > other
+#   Precedencia contextual: si hay operador de shell + comando, una ruta sensible
+#   es el argumento del comando (";cat /etc/passwd" -> command_injection).
+#   rule.matches guarda TODAS las reglas web que casan, para explicar solapamientos.
 #
 # DECISIONES: todo login (fallido o no) se etiqueta brute_force (cada intento
 # es un intento de credenciales). credential_stuffing (T1110.004) está previsto
@@ -26,12 +37,21 @@
 # ----------------------------------------------------------------------------
 # 1) Validación mínima del esquema: lo que falle va a la cola de errores
 # ----------------------------------------------------------------------------
-_ = string!(.event_id)
-_ = string!(."@timestamp")
-_ = string!(.honeypot)
-_ = string!(.service)
+RULESET = "winnie-legacy"
+RULES_VERSION = "1.1.0"
+
+.event_id = string!(.event_id)
+."@timestamp" = string!(."@timestamp")
+.honeypot = string!(.honeypot)
+.service = string!(.service)
 et = string!(.event_type)
-_ = ip_pton!(string!(.src_ip))
+.src_ip = string!(.src_ip)
+_, ip_error = ip_pton(.src_ip)
+assert!(ip_error == null, "src_ip inválida")
+# Loopback dentro del contenedor = sondeo del propio sensor (healthcheck de Compose).
+# Un atacante llega por la pasarela de Docker o por NAT, nunca desde 127.0.0.0/8.
+loopback = (ip_cidr_contains("127.0.0.0/8", .src_ip) ?? false) || .src_ip == "::1" ||
+  (ip_cidr_contains("::ffff:127.0.0.0/104", .src_ip) ?? false)
 
 # ----------------------------------------------------------------------------
 # 2) Preparación de textos a inspeccionar
@@ -43,8 +63,8 @@ body = string(.http.body) ?? ""
 ua = downcase(string(.http.user_agent) ?? "")
 
 joined = path + " " + query + " " + body
-dec = decode_percent(joined) ?? joined
-dec = decode_percent(dec) ?? dec            # doble codificación (%2527)
+dec = decode_percent(joined)
+dec = decode_percent(dec)                   # doble codificación (%2527)
 p = downcase(replace(dec, "+", " "))        # texto de payload web
 pathl = downcase(path)
 cmdi_text = p + " " + ua                    # incluye el User-Agent (shellshock)
@@ -53,54 +73,74 @@ cmdi_text = p + " " + ua                    # incluye el User-Agent (shellshock)
 # 3) Reglas
 # ----------------------------------------------------------------------------
 at = "other"
+rid = null          # regla que decide attack_type
+matches = []        # todas las reglas que casan (anotaciones múltiples)
 
 if et == "auth_attempt" {
   # 3.1 Cualquier intento de login en cualquier servicio
   at = "brute_force"
+  rid = "auth.login_attempt"
 
 } else if et == "file_upload" {
   # 3.2 Subida de fichero (web shell en el señuelo web)
   at = "file_upload"
+  rid = "file.upload"
 
 } else if et == "file_download" {
   # 3.3 Descarga de fichero iniciada por el atacante (wget/curl/tftp en Cowrie)
   at = "malware_download"
+  rid = "file.download"
 
 } else if et == "command" {
   # 3.3b Comandos: descarga desde URL externa o comando tras login
   if match(cmd, r'\b(wget|curl|lwp-download|ftpget)\b.*(https?|ftp)://|\btftp\b.*(\s-[gr]\b|\d+\.\d+\.\d+\.\d+)|\bbusybox\s+(wget|tftp|ftpget)\b') {
     at = "malware_download"
+    rid = "command.url_download"
   } else {
     at = "post_exploitation_command"
+    rid = "command.after_login"
   }
 
 } else if et == "connection" {
-  # 3.3c Conexión sin autenticar
-  at = "recon_scan"
+  # 3.3c Conexión sin autenticar; el healthcheck del sensor no es reconocimiento
+  if loopback {
+    rid = "connection.sensor_health"
+  } else {
+    at = "recon_scan"
+    rid = "connection.unauthenticated"
+  }
 
 } else if et == "request" {
-  # 3.4 Peticiones web
+  # 3.4 Peticiones web: se evalúan todas y la precedencia elige attack_type
 
-  # 3.4.1 LFI / RFI: path traversal, ficheros sensibles, wrappers, include remoto
-  if match(p, r'\.\./|\.\.\\|/etc/(passwd|shadow|group|hosts)|/proc/self/|/windows/win\.ini|boot\.ini|(php|file|data|expect|zip|phar|gopher|dict)://|(include|require|page|file|path|template|url|src|inc|doc|load)=\s*(https?|ftp)://') {
-    at = "lfi_rfi"
-
-  # 3.4.2 SQL injection (y User-Agent de sqlmap)
-  } else if match(p, r'union(\s|/\*.*?\*/)+(all(\s|/\*.*?\*/)+)?select|\b(or|and)\s+(\d+|\x27[^\x27]*\x27)\s*(=|like)\s*(\d+|\x27[^\x27]*\x27)|\x27\s*(or|and)\s|\x27\s*(--|#)|\bsleep\s*\(\s*\d|\bbenchmark\s*\(|information_schema|\bwaitfor\s+delay|\bpg_sleep\s*\(|\bextractvalue\s*\(|\bupdatexml\s*\(|;\s*(drop|truncate)\s+table|/\*!\d*|\bload_file\s*\(|into\s+(out|dump)file') || match(ua, r'sqlmap') {
-    at = "sqli"
-
-  # 3.4.3 XSS
-  } else if match(p, r'<\s*/?\s*script|javascript\s*:|\bon(error|load|click|mouseover|focus|toggle)\s*=|<\s*(img|svg|iframe|body|input|details|video|audio)[^>]*\bon\w+\s*=|<\s*iframe|<\s*svg|document\.(cookie|location|write)|\balert\s*\(|\bprompt\s*\(') {
-    at = "xss"
-
-  # 3.4.4 Inyección de comandos (y shellshock en cabeceras)
-  } else if match(cmdi_text, r'(;|\|\||&&|\||\x60|\$\()\s*(cat|ls|id|whoami|uname|wget|curl|nc|ncat|bash|sh|ping|echo|sleep|powershell|cmd|python|perl|php|busybox|chmod|rm|ifconfig|netstat|ps|env)\b|\$\{ifs\}|/bin/(ba)?sh|\bcmd(\.exe)?\s*/c|\(\)\s*\{\s*:;\s*\}|\$\(.+\)|\x60[^\x60]+\x60') {
-    at = "command_injection"
-
-  # 3.4.5 Reconocimiento: User-Agent de escáner o ruta típica de escáner
-  } else if match(ua, r'nmap|nikto|zgrab|masscan|dirbuster|gobuster|\bdirb\b|nuclei|wpscan|openvas|acunetix|nessus|zmeu|censys|shodan|netsparker|whatweb|\bffuf\b|feroxbuster') || match(pathl, r'^/(\.env|\.git|\.svn|\.aws|\.ssh|\.ds_store|\.vscode|wp-(login|admin|content|includes)|xmlrpc\.php|phpmyadmin|pma|myadmin|adminer|admin(istrator)?(/|$)|manager/html|server-status|server-info|actuator|console|solr|jenkins|cgi-bin|vendor/phpunit|boaform|hnap1|config\.(php|json|yml)|backup|owa|autodiscover|ecp|remote/login|api/v1/pods|telescope|_profiler)') {
-    at = "recon_scan"
+  # 3.4.1 Inyección de comandos (y shellshock en cabeceras)
+  if match(cmdi_text, r'(;|\|\||&&|\||\x60|\$\()\s*(cat|ls|id|whoami|uname|wget|curl|nc|ncat|bash|sh|ping|echo|sleep|powershell|cmd|python|perl|php|busybox|chmod|rm|ifconfig|netstat|ps|env)\b|\$\{ifs\}|/bin/(ba)?sh|\bcmd(\.exe)?\s*/c|\(\)\s*\{\s*:;\s*\}|\$\(.+\)|\x60[^\x60]+\x60') {
+    matches = push(matches, "web.command_injection")
   }
+  # 3.4.2 LFI / RFI: path traversal, ficheros sensibles, wrappers, include remoto
+  if match(p, r'\.\./|\.\.\\|/etc/(passwd|shadow|group|hosts)|/proc/self/|/windows/win\.ini|boot\.ini|(php|file|data|expect|zip|phar|gopher|dict)://|(include|require|page|file|path|template|url|src|inc|doc|load)=\s*(https?|ftp)://') {
+    matches = push(matches, "web.lfi_rfi")
+  }
+  # 3.4.3 SQL injection (y User-Agent de sqlmap)
+  if match(p, r'union(\s|/\*.*?\*/)+(all(\s|/\*.*?\*/)+)?select|\b(or|and)\s+(\d+|\x27[^\x27]*\x27)\s*(=|like)\s*(\d+|\x27[^\x27]*\x27)|\x27\s*(or|and)\s|\x27\s*(--|#)|\bsleep\s*\(\s*\d|\bbenchmark\s*\(|information_schema|\bwaitfor\s+delay|\bpg_sleep\s*\(|\bextractvalue\s*\(|\bupdatexml\s*\(|;\s*(drop|truncate)\s+table|/\*!\d*|\bload_file\s*\(|into\s+(out|dump)file') || match(ua, r'sqlmap') {
+    matches = push(matches, "web.sqli")
+  }
+  # 3.4.4 XSS
+  if match(p, r'<\s*/?\s*script|javascript\s*:|\bon(error|load|click|mouseover|focus|toggle)\s*=|<\s*(img|svg|iframe|body|input|details|video|audio)[^>]*\bon\w+\s*=|<\s*iframe|<\s*svg|document\.(cookie|location|write)|\balert\s*\(|\bprompt\s*\(') {
+    matches = push(matches, "web.xss")
+  }
+  # 3.4.5 Reconocimiento: User-Agent de escáner o ruta típica de escáner
+  if match(ua, r'nmap|nikto|zgrab|masscan|dirbuster|gobuster|\bdirb\b|nuclei|wpscan|openvas|acunetix|nessus|zmeu|censys|shodan|netsparker|whatweb|\bffuf\b|feroxbuster') || match(pathl, r'^/(\.env|\.git|\.svn|\.aws|\.ssh|\.ds_store|\.vscode|wp-(login|admin|content|includes)|xmlrpc\.php|phpmyadmin|pma|myadmin|adminer|admin(istrator)?(/|$)|manager/html|server-status|server-info|actuator|console|solr|jenkins|cgi-bin|vendor/phpunit|boaform|hnap1|config\.(php|json|yml)|backup|owa|autodiscover|ecp|remote/login|api/v1/pods|telescope|_profiler)') {
+    matches = push(matches, "web.recon_scan")
+  }
+  # El orden de push ES la precedencia: gana la primera
+  if length(matches) > 0 {
+    rid = string!(matches[0])
+    at = replace(rid, "web.", "")
+  }
+}
+if rid != null && length(matches) == 0 {
+  matches = [rid]
 }
 
 # ----------------------------------------------------------------------------
@@ -135,6 +175,10 @@ if at == "brute_force" {
 }
 
 .attack_type = at
+.rule = {"ruleset": RULESET, "version": RULES_VERSION, "matches": matches}
+if rid != null {
+  .rule.id = rid
+}
 if tech != null {
   .mitre_technique = tech
   .mitre_tactic = tact
@@ -150,5 +194,5 @@ if tech != null {
 # 6) Campos auxiliares para el sink (no se indexan: _id e índice diario)
 # ----------------------------------------------------------------------------
 .doc_id = .event_id
-ts = parse_timestamp!(string!(."@timestamp"), "%+")
+ts = parse_timestamp!(."@timestamp", "%+")
 .idx = "honeypot-events-" + format_timestamp!(ts, "%Y.%m.%d")

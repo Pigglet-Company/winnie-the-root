@@ -56,6 +56,9 @@ echo "4) MITRE coherente"
 N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must_not":[{"term":{"attack_type":"other"}},{"exists":{"field":"mitre_technique"}}]}}}' | num)
 [ "${N:-x}" = "0" ] && ok "todo attack_type != other tiene mitre_technique" || fail "${N:-?} eventos sin técnica MITRE"
 
+N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must_not":[{"exists":{"field":"rule.version"}}]}}}' | num)
+[ "${N:-x}" = "0" ] && ok "todos llevan rule.version" || fail "${N:-?} eventos sin rule.version"
+
 echo "5) event_id con formato UUID"
 N=$(os POST /honeypot-events/_count '{"query":{"regexp":{"event_id":"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"}}}' | num)
 [ "${N:-0}" = "$TOTAL" ] && ok "${N} event_id válidos" || fail "event_id válidos ${N:-0} de ${TOTAL}"

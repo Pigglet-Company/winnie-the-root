@@ -58,3 +58,5 @@ jobs:
         run: ./tests/check_public_entry_docker.sh --cleanup
       - name: Run Vector tests
         run: bash modules/pipeline/tests/run_vector_tests.sh
+      - name: Classify sample logs against the versioned baseline
+        run: bash modules/pipeline/tests/classify_samples.sh
