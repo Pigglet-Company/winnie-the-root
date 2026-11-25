@@ -44,7 +44,8 @@ if [ -n "${VECTOR_BIN:-}" ]; then
   "$VECTOR_BIN" "${args[@]}" &
   pid=$!
 else
-  cid="$(docker run -d -v "$W:$W" --entrypoint vector "$IMAGE" "${args[@]}")"
+  # Con el usuario del host: así los checkpoints que escribe Vector se pueden borrar al limpiar.
+  cid="$(docker run -d --user "$(id -u):$(id -g)" -v "$W:$W" --entrypoint vector "$IMAGE" "${args[@]}")"
 fi
 
 count() { cat "$W"/out/events.jsonl 2>/dev/null | wc -l | tr -d ' '; }
