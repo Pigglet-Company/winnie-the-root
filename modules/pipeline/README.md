@@ -65,6 +65,11 @@ Precedencia web: `command_injection > lfi_rfi > sqli > xss > recon_scan`. Así `
 es `command_injection` y `rule.matches` conserva también `web.lfi_rfi`. Las conexiones desde loopback
 (healthchecks de los contenedores) son `connection.sensor_health` con `attack_type=other`.
 
+Los comandos Redis conservan la semántica de su servicio: `attack_type=redis_command`, `rule.id=redis.command`
+y **sin técnica MITRE**. Es un comando del protocolo Redis, enviado sin login ni shell, y el señuelo solo lo
+emula. No prueba ejecución en el host, así que T1059.004 (shell Unix) no se sostiene (diseño V2, «Adaptación de
+eventos»). Los comandos de la shell emulada de Cowrie siguen siendo `post_exploitation_command`.
+
 Para cambiar una regla: edítala, sube `RULES_VERSION`, añade casos positivos, negativos y de solape en
 `vector/tests.yaml` y regenera el baseline:
 ```bash
@@ -79,17 +84,19 @@ docker compose restart pl-vector
 
 | Versión | Revisión | Notas |
 |---|---|---|
-| 1.1.0 | esta rama (W03) | Compila con Vector 0.43.1; añade `rule.*`, precedencia contextual y salud por loopback |
-| 1.0.0 | `c81fdf0` | Última revisión validada antes de W03; mismos `attack_type` sobre las muestras, sin `rule.*` |
+| 1.2.0 | esta rama (W03) | Redis: `redis_command` sin MITRE (177 eventos de muestra dejan de ser `post_exploitation_command`) |
+| 1.1.0 | `e6e5f8c` | Compila con Vector 0.43.1; añade `rule.*`, precedencia contextual y salud por loopback |
+| 1.0.0 | `c81fdf0` | Última revisión validada antes de W03; mismos `attack_type` que 1.1.0 sobre las muestras, sin `rule.*` |
 
-Volver a una versión conocida (los datos ya indexados se conservan):
+Volver a una versión conocida (los datos ya indexados se conservan; sustituye la revisión de la tabla):
 ```bash
-git checkout c81fdf0 -- modules/pipeline/vector/rules/classify.vrl
+git checkout e6e5f8c -- modules/pipeline/vector/rules/classify.vrl
 docker compose restart pl-vector
 ```
-Los dos baselines (`vector/baseline/winnie-legacy-1.0.0.json` y `-1.1.0.json`) muestran que la vuelta atrás
-no cambia ningún recuento por `attack_type`. Los tests de `vector/tests.yaml` que comprueban `rule.*` fallarán
-con 1.0.0: es lo esperado.
+Cada versión tiene su baseline en `vector/baseline/winnie-legacy-<versión>.json`. Compararlos muestra qué
+cambia al volver atrás. 1.1.0 → 1.0.0 no cambia ningún recuento por `attack_type`, y 1.2.0 → 1.1.0 solo mueve
+los 177 comandos Redis. Los tests de `vector/tests.yaml` escritos para la versión nueva fallarán con la antigua:
+es lo esperado.
 Los eventos ya indexados no se reclasifican (borra el índice y reinicia con `docker compose down -v` si necesitas
 reprocesar; el `_id` determinista evita duplicados al releer).
 

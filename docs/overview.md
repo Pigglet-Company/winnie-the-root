@@ -133,9 +133,10 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 | La IP del atacante se toma de la conexión real; cabeceras como `X-Forwarded-For` solo se aceptan si se activa `TRUST_PROXY` | Suite web | Verificado (W02) |
 | `/comment` muestra el comentario **escapado** (inofensivo) por defecto; `COMMENT_REFLECT_RAW=true` activa el fallo XSS de laboratorio | Envía `<script>alert(1)</script>` en <http://localhost:8080/comment> | Verificado (W02) |
 | Datos de ejemplo y panel con 19 objetos (gráficos, tablas, búsqueda guardada) | Opción 1 | El panel se regenera idéntico; con W03 los 6001 eventos de ejemplo se clasifican igual que en la última versión validada |
-| Clasificación de ataques (SQLi, XSS, fuerza bruta…) con mapeo MITRE ATT&CK | Panel, campos `attack_type` y `rule.id` | Verificada sin Docker con Vector 0.43.1 (W03): 42 casos, incluidos solapes y controles inocuos |
+| Clasificación de ataques (SQLi, XSS, fuerza bruta…) con mapeo MITRE ATT&CK | Panel, campos `attack_type` y `rule.id` | Verificada sin Docker con Vector 0.43.1 (W03): 44 casos, incluidos solapes y controles inocuos |
 | Cada evento dice qué regla y qué versión lo clasificó; el hecho (un login, un comando Redis, una descarga) se guarda aparte de su interpretación ATT&CK | Campos `rule.version`, `rule.id`, `rule.matches` | Verificado (W03); se puede volver a la versión anterior con un comando ([guía](../modules/pipeline/README.md#reglas-versiones-y-vuelta-atrás)) |
 | Las comprobaciones internas de salud de los señuelos ya no aparecen como «escaneos» | Panel: menos `recon_scan` en un sistema parado | Verificado por pruebas (W03) |
+| Un comando Redis aparece como «comando Redis», sin técnica MITRE: el señuelo solo lo imita y no prueba que se ejecutara nada | Panel: tipo `redis_command` | Verificado por pruebas (W03) |
 
 ## 5. Problemas conocidos del estado actual
 
@@ -143,7 +144,6 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 |---|---|---|
 | El instalador del VPS (`deploy/setup.sh`) no se ha ensayado en una máquina real | Puede fallar o dejar SSH/firewall a medias; úsalo solo en una máquina desechable | Ensayo autorizado en máquina desechable (pendiente) |
 | La rama GeoIP (mapa por país) no se ha probado: falta la base de datos MaxMind autorizada | El mapa del panel queda vacío; el resto funciona | Ensayo con MMDB autorizada (pendiente) |
-| Un comando Redis se etiqueta como «comando tras intrusión» (T1059.004) aunque el señuelo solo lo emula | La técnica MITRE exagera lo ocurrido | Pendiente de decisión (diseño V2) |
 | No existe una lista de proxies autorizados (solo `TRUST_PROXY` sí/no) | Prueba `xfailed` en la suite web | Pendiente de decisión (diseño V2) |
 | El volumen de registros tiene permisos 0777 | Cualquier contenedor puede escribir los registros de otro | W04 |
 | CI en rojo desde la PR #6 | Marca roja en GitHub | Se corrige al integrar las PR de W02 y W03 |

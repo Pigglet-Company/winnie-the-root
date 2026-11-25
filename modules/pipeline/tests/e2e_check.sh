@@ -53,8 +53,10 @@ for f in '@timestamp' event_id honeypot service event_type src_ip; do
 done
 
 echo "4) MITRE coherente"
-N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must_not":[{"term":{"attack_type":"other"}},{"exists":{"field":"mitre_technique"}}]}}}' | num)
-[ "${N:-x}" = "0" ] && ok "todo attack_type != other tiene mitre_technique" || fail "${N:-?} eventos sin técnica MITRE"
+N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must_not":[{"terms":{"attack_type":["other","redis_command"]}},{"exists":{"field":"mitre_technique"}}]}}}' | num)
+[ "${N:-x}" = "0" ] && ok "todo attack_type con técnica (salvo other y redis_command) tiene mitre_technique" || fail "${N:-?} eventos sin técnica MITRE"
+N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must":[{"term":{"attack_type":"redis_command"}},{"exists":{"field":"mitre_technique"}}]}}}' | num)
+[ "${N:-x}" = "0" ] && ok "redis_command sin técnica MITRE" || fail "${N:-?} redis_command con técnica MITRE"
 
 N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must_not":[{"exists":{"field":"rule.version"}}]}}}' | num)
 [ "${N:-x}" = "0" ] && ok "todos llevan rule.version" || fail "${N:-?} eventos sin rule.version"

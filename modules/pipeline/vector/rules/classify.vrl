@@ -21,7 +21,8 @@
 #
 # PRECEDENCIA (la primera regla que casa gana):
 #   por event_type:  auth_attempt -> brute_force | file_upload | file_download
-#                    command -> malware_download / post_exploitation_command
+#                    command -> redis_command (servicio Redis, sin MITRE) /
+#                               malware_download / post_exploitation_command
 #                    connection -> recon_scan, salvo loopback del propio sensor
 #                    (healthcheck: other, sin MITRE) | request -> reglas web (3.4)
 #   web: command_injection > lfi_rfi > sqli > xss > recon_scan > other
@@ -29,7 +30,9 @@
 #   es el argumento del comando (";cat /etc/passwd" -> command_injection).
 #   rule.matches guarda TODAS las reglas web que casan, para explicar solapamientos.
 #
-# DECISIONES: todo login (fallido o no) se etiqueta brute_force (cada intento
+# DECISIONES: redis_command y other no llevan técnica MITRE: una anotación ATT&CK
+# necesita evidencia, y un comando Redis emulado no la aporta (diseño V2).
+# todo login (fallido o no) se etiqueta brute_force (cada intento
 # es un intento de credenciales). credential_stuffing (T1110.004) está previsto
 # pero desactivado: requiere agregación temporal (ver sección 5).
 # =============================================================================
@@ -38,7 +41,7 @@
 # 1) Validación mínima del esquema: lo que falle va a la cola de errores
 # ----------------------------------------------------------------------------
 RULESET = "winnie-legacy"
-RULES_VERSION = "1.1.0"
+RULES_VERSION = "1.2.0"
 
 .event_id = string!(.event_id)
 ."@timestamp" = string!(."@timestamp")
@@ -92,8 +95,14 @@ if et == "auth_attempt" {
   rid = "file.download"
 
 } else if et == "command" {
-  # 3.3b Comandos: descarga desde URL externa o comando tras login
-  if match(cmd, r'\b(wget|curl|lwp-download|ftpget)\b.*(https?|ftp)://|\btftp\b.*(\s-[gr]\b|\d+\.\d+\.\d+\.\d+)|\bbusybox\s+(wget|tftp|ftpget)\b') {
+  # 3.3b Comandos. Redis conserva la semántica de su servicio: es un comando del
+  # protocolo Redis (sin login ni shell), y el señuelo solo lo emula, así que no
+  # prueba ejecución en el host ni justifica T1059.004. Sin técnica MITRE.
+  if .service == "redis" {
+    at = "redis_command"
+    rid = "redis.command"
+  # Shell emulada (Cowrie): descarga desde URL externa o comando tras login
+  } else if match(cmd, r'\b(wget|curl|lwp-download|ftpget)\b.*(https?|ftp)://|\btftp\b.*(\s-[gr]\b|\d+\.\d+\.\d+\.\d+)|\bbusybox\s+(wget|tftp|ftpget)\b') {
     at = "malware_download"
     rid = "command.url_download"
   } else {
