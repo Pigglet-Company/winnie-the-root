@@ -55,8 +55,9 @@ El proyecto se divide en tres módulos:
 ### Flujo de los datos:
 <img width="768" height="714" alt="image" src="https://github.com/user-attachments/assets/96146f8e-67eb-4db4-9c18-814af0e58df2" />
 
-Los honeypots escriben sus registros en el volumen compartido
-`honeylogs`. Vector lo monta en **solo lectura**, procesa los ficheros y
+Cada honeypot escribe sus registros en su propio volumen
+(`honeylogs-cowrie`, `honeylogs-opencanary`, `honeylogs-web`). Vector los
+monta en **solo lectura**, procesa los ficheros y
 envía los eventos a OpenSearch. Dashboards permite consultar los datos
 almacenados.
 
@@ -381,22 +382,22 @@ vacíos.
 
 ## Consultar los registros
 
-Los eventos originales se guardan en el volumen Docker `honeylogs`:
+Los eventos originales se guardan en un volumen Docker por fuente:
 
--   Cowrie: `/logs/cowrie/cowrie.json`
--   OpenCanary: `/logs/opencanary/opencanary.log`
--   Web: `/logs/web/web.jsonl`
+-   Cowrie: `honeylogs-cowrie`, fichero `cowrie.json`
+-   OpenCanary: `honeylogs-opencanary`, fichero `opencanary.log`
+-   Web: `honeylogs-web`, fichero `web.jsonl`
 
 Puedes consultar las últimas líneas sin entrar en los contenedores:
 
 ``` bash
-docker run --rm -v honeylogs:/logs:ro busybox tail -n 20 /logs/web/web.jsonl
+docker run --rm -v honeylogs-web:/logs/web:ro busybox tail -n 20 /logs/web/web.jsonl
 ```
 
 Para ver los eventos de Cowrie en tiempo real, si tienes `jq` instalado:
 
 ``` bash
-docker run --rm -v honeylogs:/logs:ro busybox tail -F /logs/cowrie/cowrie.json \
+docker run --rm -v honeylogs-cowrie:/logs/cowrie:ro busybox tail -F /logs/cowrie/cowrie.json \
   | jq -c '{time: .timestamp, event: .eventid, ip: .src_ip, user: .username, command: .input}'
 ```
 
@@ -508,9 +509,11 @@ docker compose restart pl-vector
 
 -   Es un laboratorio y no debe considerarse una plataforma de
     producción lista para exponerse a Internet.
--   El volumen compartido `honeylogs` se prepara con permisos amplios
-    para facilitar las pruebas locales. Deben revisarse antes de un
-    despliegue real.
+-   Las cuotas de los volúmenes de logs se comprueban
+    (`scripts/volume_usage.sh`) pero no las impone el sistema de
+    ficheros. Cowrie sigue guardando TTY, comandos y contraseñas
+    probadas, por encima de lo que fija la tabla de privacidad. Detalle
+    en [docs/lab-containment.md](docs/lab-containment.md).
 -   La configuración de desarrollo de OpenSearch/Dashboards no habilita
     autenticación.
 -   La configuración de producción requiere revisar y endurecer

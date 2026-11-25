@@ -5,7 +5,8 @@ arrancarlo, saber qué debería ver y qué falta todavía. Los detalles técnico
 [README.md](../README.md), [RUN.md](RUN.md) y las guías de cada módulo.
 
 > **Estado descrito:** `main` en `31216e9`, más las PR pendientes de W02 (fixture de pruebas web
-> y escape de `/comment`), W01 (arranque fiable) y W03 (reglas de clasificación y GeoIP con DB-IP). Actualizado el 25-11-2026.
+> y escape de `/comment`), W01 (arranque fiable), W03 (reglas de clasificación y GeoIP con DB-IP) y W04
+> (contención del laboratorio). Actualizado el 25-11-2026.
 > Si este bloque no coincide con el último trabajo cerrado, la guía está desactualizada.
 
 ## 1. Qué es Winnie, en una frase
@@ -96,8 +97,16 @@ no compila y `pl-vector` no arranca.
 
 ```bash
 ./scripts/down.sh synthetic   # primero para lo anterior
+sudo modules/ssh-honeypot/scripts/egress-firewall.sh   # solo Linux; necesita permisos de administrador
 ./scripts/up.sh full
 ```
+
+El sistema completo recibe ataques de verdad, así que antes de arrancar los señuelos `up.sh` comprueba
+que no pueden **abrir conexiones hacia fuera**: ni a Internet, ni al ordenador que los aloja, ni entre
+ellos. Si pueden, se para y te dice qué hacer. La segunda línea instala esas reglas, que solo cortan
+lo que sale: los señuelos siguen respondiendo a quien se conecta. Si vienes de una versión anterior,
+`init.sh` te pedirá antes `./scripts/migrate_honeylogs.sh`, que copia los registros antiguos sin
+borrarlos ([detalle](lab-containment.md)).
 
 | Quieres probar… | Haz esto | Qué debería pasar |
 |---|---|---|
@@ -114,7 +123,7 @@ y termina con error.
 ### Probar sin Docker (lo que cualquier persona puede repetir)
 
 ```bash
-python3 -m unittest discover -s tests          # pruebas de la raíz: 16 deben pasar
+python3 -m unittest discover -s tests          # pruebas de la raíz: 25 deben pasar
 cd modules/web-honeypot && pip install -r requirements-dev.txt && python -m pytest -q
 ```
 
@@ -138,6 +147,8 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 | Las comprobaciones internas de salud de los señuelos ya no aparecen como «escaneos» | Panel: menos `recon_scan` en un sistema parado | Verificado por pruebas (W03) |
 | Mapa y países del atacante con la base gratuita DB-IP City Lite (hay que citar a DB-IP al mostrar los datos) | `modules/pipeline/scripts/download_geoip.sh` y reiniciar `pl-vector` | Verificado en local y en CI con Docker (W03); sin la base, el resto funciona igual |
 | Un comando Redis aparece como «comando Redis», sin técnica MITRE: el señuelo solo lo imita y no prueba que se ejecutara nada | Panel: tipo `redis_command` | Verificado por pruebas (W03) |
+| Cada señuelo guarda sus registros en su propio almacén; los demás no pueden leerlo, cambiarlo ni borrarlo, y Vector solo puede leer | `./scripts/volume_usage.sh` muestra cada almacén y su cuota | Verificado en CI con Docker y los usuarios reales de cada señuelo (W04) |
+| Los señuelos no pueden abrir conexiones hacia Internet, hacia el ordenador que los aloja, hacia los metadatos de la nube ni entre ellos; si las reglas se instalan a medias, la salida queda cerrada | `./scripts/check_egress.sh` | Verificado en CI con Docker, incluido un fallo provocado a medias (W04). Es la prueba del laboratorio, no la de un sensor real (H02) |
 
 ## 5. Problemas conocidos del estado actual
 
@@ -145,7 +156,8 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 |---|---|---|
 | El instalador del VPS (`deploy/setup.sh`) no se ha ensayado en una máquina real | Puede fallar o dejar SSH/firewall a medias; úsalo solo en una máquina desechable | Ensayo autorizado en máquina desechable (pendiente) |
 | No existe una lista de proxies autorizados (solo `TRUST_PROXY` sí/no) | Prueba `xfailed` en la suite web | Pendiente de decisión (diseño V2) |
-| El volumen de registros tiene permisos 0777 | Cualquier contenedor puede escribir los registros de otro | W04 |
+| El SSH falso guarda las sesiones de teclado, los comandos y las contraseñas que se prueban, aunque el diseño dice que no se deben guardar | Esos datos están en los registros de Cowrie | Pendiente de decisión ([detalle](lab-containment.md#diferencia-con-la-tabla-de-privacidad)) |
+| Las cuotas de espacio se comprueban, pero el sistema no las impide | Un almacén puede pasarse de su cuota; `volume_usage.sh` lo avisa | Requiere preparar el disco del servidor como administrador |
 | CI en rojo desde la PR #6 | Marca roja en GitHub | Se corrige al integrar las PR de W02 y W03 |
 
 ## 6. Hacia dónde va
@@ -156,7 +168,7 @@ El contrato completo está en [design.md](design.md). Resumen:
 |---|---|---|
 | **Arranque fiable** | W01 ✔ (en PR) | Un checkout limpio arranca con un comando, escucha solo en `localhost` por defecto, valida requisitos antes de empezar y `down.sh` informa de errores reales |
 | **Web y reglas** | W02 ✔ (en PR), W03 ✔ (en PR) | Pruebas web en verde; clasificador que compila con casos positivos y negativos |
-| **Contención** | W04 | Cada servicio escribe solo en su sitio, con cuotas; un señuelo comprometido no contamina a los demás |
+| **Contención** | W04 ✔ (en PR) | Cada servicio escribe solo en su sitio, con cuotas; un señuelo comprometido no contamina a los demás |
 | **Contabilidad** | W05 | Recuentos exactos de eventos por fuente: se sabe si se perdió algo |
 | **Entrega académica (TFM)** | W06 | Una segunda persona produce una interacción ficticia, la sigue hasta el panel y explica la clasificación y cualquier hueco |
 | **Piloto en red IT** | H01–H05 | Sensores con identidad propia, consola para el SOC, expedientes verificables offline, instalación y actualización firmadas, piloto con un cliente |

@@ -128,9 +128,7 @@ configure_ufw() {
 }
 
 ensure_shared_resources() {
-  if docker network inspect honeynet >/dev/null 2>&1 && docker volume inspect honeylogs >/dev/null 2>&1; then
-    log "honeynet y honeylogs ya existen"; return
-  fi
+  # init.sh es idempotente: crea o verifica honeynet aislada y los volúmenes honeylogs-<fuente>.
   [[ -f "$REPO_ROOT/scripts/init.sh" ]] || die "falta $REPO_ROOT/scripts/init.sh (lo aporta la integración)"
   log "Ejecutando scripts/init.sh"
   bash "$REPO_ROOT/scripts/init.sh"
@@ -156,9 +154,10 @@ install_firewall_service() {
   cat > /etc/systemd/system/honeypot-firewall.service <<EOF
 [Unit]
 Description=Honeypot: firewall de salida y redirecciones de puertos
-After=docker.service network-online.target
+# Antes de Docker: cuando Docker arranca los señuelos (restart: unless-stopped) la salida ya está cerrada.
+Before=docker.service
+After=network-online.target
 Wants=network-online.target
-Requires=docker.service
 
 [Service]
 Type=oneshot
@@ -181,7 +180,7 @@ install_log_pruning() {
   # Cowrie rota a diario (cowrie.json.AAAA-MM-DD); se conservan 5 días
   cat > /etc/cron.daily/honeypot-prune-logs <<'EOF'
 #!/bin/sh
-find /var/lib/docker/volumes/honeylogs/_data/cowrie -name 'cowrie.json.*' -mtime +5 -delete
+find /var/lib/docker/volumes/honeylogs-cowrie/_data -name 'cowrie.json.*' -mtime +5 -delete
 EOF
   chmod 0755 /etc/cron.daily/honeypot-prune-logs
 }
@@ -240,8 +239,8 @@ cmd_prepare() {
   write_sshd_dropin 22 "$REAL_SSH_PORT"       # el 22 sigue abierto hasta 'finalize'
   configure_ufw
   ensure_shared_resources
+  install_firewall_service   # la política de salida va antes de que escuche ningún señuelo
   start_honeypots
-  install_firewall_service
   install_log_pruning
   (( WITH_WG )) && setup_wireguard
 

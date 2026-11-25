@@ -12,10 +12,10 @@ FROM python:3.11.11-slim-bookworm
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libpcap0.8 \
  && rm -rf /var/lib/apt/lists/* \
- && useradd --system --uid 10001 --create-home --home-dir /home/canary --shell /usr/sbin/nologin canary
+ && useradd --system --uid 10002 --create-home --home-dir /home/canary --shell /usr/sbin/nologin canary
 COPY --from=build /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1
-USER 10001:10001
+USER 10002:10002
 WORKDIR /home/canary
 # --dev = primer plano (necesario en contenedores). Config: /etc/opencanaryd/opencanary.conf
 CMD ["opencanaryd", "--dev"]

@@ -3,7 +3,8 @@
 #   ./scripts/down.sh [full]             para señuelos y pipeline (por defecto)
 #   ./scripts/down.sh synthetic          para solo el pipeline
 #   ./scripts/down.sh [perfil] --purge   además BORRA los volúmenes de esos módulos; con full,
-#                                        también la red y el volumen de logs compartidos
+#                                        también la red y los volúmenes de logs por fuente
+# El volumen anterior a W04 (honeylogs) nunca se borra aquí: es el legado de la migración.
 # Solo toca proyectos Compose de Winnie y recursos con la etiqueta del proyecto.
 # Sale con 1 si algo no se pudo parar o borrar.
 set -uo pipefail
@@ -11,7 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=lib/contract.sh
 . "$ROOT/scripts/lib/contract.sh"
 
-usage() { sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 PROFILE=full; PURGE=0
 for arg in "$@"; do
   case "$arg" in
@@ -50,8 +51,12 @@ remove_shared() {   # $1=volume|network $2=nombre
   esac
 }
 if [ "$PURGE" = 1 ] && [ "$PROFILE" = full ]; then
-  remove_shared volume "$SHARED_VOL"
+  for vol in $(source_volume_names); do remove_shared volume "$vol"; done
   remove_shared network "$SHARED_NET"
+  if docker volume inspect "$LEGACY_VOL" >/dev/null 2>&1; then
+    echo "[down] conservo el volumen legado $LEGACY_VOL (anterior a W04). Bórralo a mano cuando ya" \
+         "no necesites volver atrás: docker volume rm $LEGACY_VOL"
+  fi
 fi
 
 if [ "$FAILS" -gt 0 ]; then

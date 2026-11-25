@@ -201,7 +201,9 @@ class ScriptsWithFakeDockerTest(unittest.TestCase):
                 r = self.run_script("down.sh", "full", "--purge", FAKE_DOCKER_SHARED=shared)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 calls = self.docker_calls()
-                self.assertEqual("volume rm honeylogs" in calls, removed)
+                for vol in ("honeylogs-cowrie", "honeylogs-opencanary", "honeylogs-web"):
+                    self.assertEqual(f"volume rm {vol}" in calls, removed)
+                self.assertNotIn("volume rm honeylogs", calls)   # el legado nunca se borra
                 self.assertEqual("network rm honeynet" in calls, removed)
                 self.assertEqual(sum(c.endswith("down -v") for c in calls), 3)
 
