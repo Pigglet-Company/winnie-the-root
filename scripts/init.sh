@@ -5,11 +5,14 @@
 # Los permisos 0777 son SOLO para pruebas: cada productor corre con un UID distinto.
 # Antes de recibir tráfico real, ajusta propietarios (ver docs/RUN.md).
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/contract.sh
+. "$ROOT/scripts/lib/contract.sh"
 
-NET="honeynet"
-SUBNET="172.30.0.0/24"
+NET="$SHARED_NET"
+SUBNET="$SHARED_SUBNET"
 IP_RANGE="172.30.0.128/25"      # auto-asignación lejos de las IPs fijas (.10/.11)
-VOL="honeylogs"
+VOL="$SHARED_VOL"
 BUSYBOX="${BUSYBOX_IMAGE:-busybox:1.36.1}"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -25,14 +28,14 @@ if docker network inspect "$NET" >/dev/null 2>&1; then
     *) die "la red $NET existe con otra subred ($current). Bórrala (docker network rm $NET) o ajusta las IPs fijas del compose.";;
   esac
 else
-  docker network create --driver bridge --subnet "$SUBNET" --ip-range "$IP_RANGE" "$NET" >/dev/null
+  docker network create --label "$PROJECT_LABEL" --driver bridge --subnet "$SUBNET" --ip-range "$IP_RANGE" "$NET" >/dev/null
   echo "[init] red $NET creada ($SUBNET)"
 fi
 
 if docker volume inspect "$VOL" >/dev/null 2>&1; then
   echo "[init] volumen $VOL ya existe"
 else
-  docker volume create "$VOL" >/dev/null
+  docker volume create --label "$PROJECT_LABEL" "$VOL" >/dev/null
   echo "[init] volumen $VOL creado"
 fi
 

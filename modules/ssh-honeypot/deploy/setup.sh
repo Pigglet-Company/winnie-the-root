@@ -32,7 +32,17 @@ check_os() {
   . /etc/os-release
   [[ "${ID:-}" == "ubuntu" && ( "${VERSION_ID:-}" == "22.04" || "${VERSION_ID:-}" == "24.04" ) ]] \
     || die "solo Ubuntu 22.04/24.04 (detectado: ${PRETTY_NAME:-desconocido})"
-  [[ -f "$MODULE_DIR/compose.yml" ]] || die "no encuentro $MODULE_DIR/compose.yml"
+}
+
+# Todo lo que prepare necesita del repositorio, comprobado ANTES de tocar paquetes, SSH o ufw.
+check_repo_files() {
+  local f
+  for f in "$MODULE_DIR/compose.yml" "$MODULE_DIR/scripts/egress-firewall.sh" \
+           "$SCRIPT_DIR/redirect-ports.sh" "$REPO_ROOT/scripts/init.sh" "$REPO_ROOT/scripts/lib/contract.sh"; do
+    [[ -f "$f" ]] || die "falta $f (checkout incompleto); no se ha cambiado nada"
+  done
+  [[ -f "$MODULE_DIR/.env" || -f "$MODULE_DIR/.env.example" ]] \
+    || die "falta $MODULE_DIR/.env.example; no se ha cambiado nada"
 }
 
 install_packages() {
@@ -128,7 +138,13 @@ ensure_shared_resources() {
 
 start_honeypots() {
   log "Levantando honeypots"
-  [[ -f "$MODULE_DIR/.env" ]] || cp "$MODULE_DIR/.env.example" "$MODULE_DIR/.env"
+  if [[ ! -f "$MODULE_DIR/.env" ]]; then
+    cp "$MODULE_DIR/.env.example" "$MODULE_DIR/.env"
+    # En el VPS los señuelos deben escuchar en todas las interfaces (el ejemplo trae 127.0.0.1).
+    sed -i 's/^HP_BIND_ADDR=.*/HP_BIND_ADDR=0.0.0.0/' "$MODULE_DIR/.env"
+  fi
+  grep -q '^HP_BIND_ADDR=' "$MODULE_DIR/.env" || echo 'HP_BIND_ADDR=0.0.0.0' >> "$MODULE_DIR/.env"
+  log "Señuelos publicados en $(grep '^HP_BIND_ADDR=' "$MODULE_DIR/.env" | tail -1)"
   (cd "$MODULE_DIR" && docker compose up -d --build)
 }
 
@@ -216,6 +232,7 @@ cmd_prepare() {
   home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
   keys="$home/.ssh/authorized_keys"
   [[ -s "$keys" ]] || die "$keys no existe o está vacío: se desactiva la contraseña, necesitas clave pública"
+  check_repo_files
 
   install_packages
   install_docker

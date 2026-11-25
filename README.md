@@ -98,7 +98,10 @@ Desktop.
 
 ## Despliegue rápido
 
-Ejecuta los comandos desde la raíz del repositorio.
+Ejecuta los comandos desde la raíz del repositorio. El runbook
+completo está en [docs/RUN.md](docs/RUN.md). `./scripts/preflight.sh
+<synthetic|full>` comprueba requisitos y puertos sin cambiar nada;
+`up.sh` lo ejecuta antes de arrancar.
 
 ### Opción 1: probar el dashboard con datos de ejemplo
 
@@ -120,8 +123,7 @@ paneles aparecen vacíos.
 Para comprobar el recorrido de los datos:
 
 ``` bash
-cd modules/pipeline
-./tests/e2e_check.sh
+./modules/pipeline/tests/e2e_check.sh
 ```
 
 ### Opción 2: levantar el sistema completo
@@ -129,7 +131,7 @@ cd modules/pipeline
 Primero, si estabas utilizando el modo sintético, detenlo:
 
 ``` bash
-./scripts/down.sh
+./scripts/down.sh synthetic
 ```
 
 Después, desde la raíz del repositorio:
@@ -212,15 +214,11 @@ una base de datos MySQL ni un servidor Redis real.
 
 ### Dirección de enlace de los puertos
 
-Por defecto, los puertos SSH/Telnet/FTP/MySQL/Redis se enlazan a
-`127.0.0.1`. Para cambiar esa dirección, crea
-`modules/ssh-honeypot/.env` a partir de `.env.example` y configura
-`HP_BIND_ADDR`.
-
-**Atención:** el puerto web se publica mediante `8080:8080` sin
-restringir la dirección del host, por lo que Docker puede hacerlo
-accesible desde otras interfaces. Dashboards, en cambio, está enlazado
-explícitamente a `127.0.0.1:5601`.
+Por defecto, todos los puertos (SSH/Telnet/FTP/MySQL/Redis, web y
+Dashboards) se enlazan a `127.0.0.1`, también al lanzar un módulo por
+separado. Para abrir los señuelos a otras interfaces, crea el `.env`
+del módulo a partir de `.env.example` y configura `HP_BIND_ADDR`.
+Dashboards queda siempre en `127.0.0.1:5601`.
 
 No abras estos puertos a Internet sin revisar y adaptar antes las
 medidas de seguridad.
@@ -433,11 +431,17 @@ Desde la raíz del repositorio:
 ./scripts/down.sh
 ```
 
+Para parar solo el pipeline: `./scripts/down.sh synthetic`. Si algo
+no se puede parar, `down.sh` muestra el error y sale con código 1.
+
 Para eliminar también los volúmenes, la red compartida y los logs:
 
 ``` bash
-./scripts/down.sh --purge
+./scripts/down.sh full --purge
 ```
+
+`--purge` solo borra la red y el volumen compartidos si llevan la
+etiqueta del proyecto que les pone `scripts/init.sh`.
 
 > `--purge` elimina datos persistentes. Utilízalo solo si estás seguro
 > de que no necesitas conservar los registros ni los índices.
@@ -450,8 +454,10 @@ Winee_de_Pou/
 ├── RUN.md
 ├── scripts/
 │   ├── init.sh
+│   ├── preflight.sh
 │   ├── up.sh
-│   └── down.sh
+│   ├── down.sh
+│   └── lib/contract.sh
 └── modules/
     ├── ssh-honeypot/
     │   ├── cowrie/

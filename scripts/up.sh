@@ -3,47 +3,37 @@
 #   ./scripts/up.sh synthetic   Solo el pipeline con datos sintéticos (sin honeypots). Primera prueba.
 #   ./scripts/up.sh full        Honeypots SSH + web + pipeline (todo el sistema).
 #   ./scripts/up.sh --help
+# Antes de cambiar nada ejecuta scripts/preflight.sh; si falla, no toca el host.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/contract.sh
+. "$ROOT/scripts/lib/contract.sh"
 MODE="${1:-}"
 
-usage() { sed -n '2,6p' "$0"; exit "${1:-0}"; }
+usage() { sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 [ -n "$MODE" ] || usage 1
-[ "$MODE" = "--help" ] && usage 0
-case "$MODE" in synthetic|full) ;; *) usage 1;; esac
+[ "$MODE" = "--help" ] || [ "$MODE" = "-h" ] && usage 0
+profile_modules "$MODE" >/dev/null 2>&1 || usage 1
 
-# Linux: OpenSearch necesita vm.max_map_count >= 262144
-if [ "$(uname -s)" = "Linux" ] && [ -r /proc/sys/vm/max_map_count ]; then
-  cur="$(cat /proc/sys/vm/max_map_count)"
-  if [ "$cur" -lt 262144 ]; then
-    echo "AVISO: vm.max_map_count=$cur (< 262144). OpenSearch no arrancará."
-    echo "       Ejecuta:  sudo sysctl -w vm.max_map_count=262144"
-    exit 1
-  fi
-fi
+bash "$ROOT/scripts/preflight.sh" "$MODE"
+bash "$ROOT/scripts/init.sh"
 
-"$ROOT/scripts/init.sh"
-
-# Primera ejecución: puertos de los señuelos solo en localhost (cambia a 0.0.0.0 bajo tu responsabilidad)
-export HP_BIND_ADDR="${HP_BIND_ADDR:-127.0.0.1}"
-
+# Los puertos de los señuelos escuchan en 127.0.0.1 salvo que el .env del módulo diga otra cosa.
 if [ "$MODE" = "synthetic" ]; then
-  cd "$ROOT/modules/pipeline"
-  python3 tools/generate_sample_data.py
-  docker compose -f compose.yml -f compose.dev.yml up -d
-else
-  (cd "$ROOT/modules/ssh-honeypot" && docker compose up -d --build)
-  (cd "$ROOT/modules/web-honeypot" && docker compose up -d --build)
-  cd "$ROOT/modules/pipeline"
-  docker compose up -d
+  (cd "$ROOT/modules/pipeline" && python3 tools/generate_sample_data.py)
 fi
+for m in $(profile_modules "$MODE"); do
+  build=(); [ "$m" = "pipeline" ] || build=(--build)
+  # shellcheck disable=SC2046
+  (cd "$ROOT/modules/$m" && docker compose $(compose_files "$MODE" "$m") up -d ${build[@]+"${build[@]}"})
+done
 
-./scripts/import_dashboards.sh
+bash "$ROOT/modules/pipeline/scripts/import_dashboards.sh"
 
 echo
 echo "Listo. Dashboards:  http://localhost:5601/app/dashboards#/view/hp-dashboard  (rango: últimos 30 días)"
 if [ "$MODE" = "synthetic" ]; then
-  echo "Verificación extremo a extremo:  (cd modules/pipeline && ./tests/e2e_check.sh)"
+  echo "Verificación extremo a extremo:  bash modules/pipeline/tests/e2e_check.sh"
 else
   echo "SSH señuelo: ssh -p 2222 root@127.0.0.1 (pass: root)  ·  Web señuelo: http://localhost:8080"
 fi
