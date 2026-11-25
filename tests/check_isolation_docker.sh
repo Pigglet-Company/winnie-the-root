@@ -37,10 +37,11 @@ cleanup() {
 trap cleanup EXIT
 probe() { docker run --rm --network "$SHARED_NET" --user 65534:65534 "$BB" nc -w 3 "${1%:*}" "${1#*:}" </dev/null >/dev/null 2>&1; }
 closed() { if probe "$1"; then fail "$2: $1 conecta"; else ok "$2: $1 no conecta"; fi; }
-vol() { local s; for s in $SOURCE_VOLUMES; do [ "${s%%:*}" = "$1" ] && { s="${s#*:}"; echo "${s%%:*}"; }; done; }
-uid() { local s; for s in $SOURCE_VOLUMES; do [ "${s%%:*}" = "$1" ] && { s="${s#*:*:}"; echo "${s%%:*}"; }; done; }
+# Búsquedas en SOURCE_VOLUMES y FILES. Siempre devuelven 0: se usan en asignaciones con set -e.
+vol() { local s; for s in $SOURCE_VOLUMES; do if [ "${s%%:*}" = "$1" ]; then s="${s#*:}"; echo "${s%%:*}"; fi; done; }
+uid() { local s; for s in $SOURCE_VOLUMES; do if [ "${s%%:*}" = "$1" ]; then s="${s#*:*:}"; echo "${s%%:*}"; fi; done; }
 FILES="cowrie:cowrie.json opencanary:opencanary.log web:web.jsonl"
-file_of() { local f; for f in $FILES; do [ "${f%%:*}" = "$1" ] && echo "${f#*:}"; done; }
+file_of() { local f; for f in $FILES; do if [ "${f%%:*}" = "$1" ]; then echo "${f#*:}"; fi; done; }
 in_vol() { local v="$1"; shift; docker run --rm --network none -v "$v:/v:ro" "$BB" "$@"; }
 legacy_hash() { docker run --rm --network none -v "$LEGACY_VOL:/old:ro" "$BB" sh -c 'cd /old && find . -type f -exec sha256sum {} + | sort; stat -c "%a %n" /old /old/*' | sha256sum; }
 
