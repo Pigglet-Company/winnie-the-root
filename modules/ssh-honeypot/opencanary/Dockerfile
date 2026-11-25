@@ -17,5 +17,7 @@ COPY --from=build /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER 10002:10002
 WORKDIR /home/canary
-# --dev = primer plano (necesario en contenedores). Config: /etc/opencanaryd/opencanary.conf
-CMD ["opencanaryd", "--dev"]
+# Primer plano, sin el envoltorio `opencanaryd --dev`: sin root, ese script ejecuta `$(which sudo) -E …`
+# y, como la imagen no trae sudo, nunca arranca (0.9.4 está retirada en PyPI por eso; 0.9.5 mantiene
+# la misma función). Es la misma orden que lanzaría el envoltorio. Config: /etc/opencanaryd/opencanary.conf
+CMD ["twistd", "--nodaemon", "--no_save", "--pidfile=", "--python", "/opt/venv/bin/opencanary.tac"]
