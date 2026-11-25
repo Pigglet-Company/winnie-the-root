@@ -2,6 +2,7 @@
 
 Winnie = honeypots (SSH/Telnet/FTP/MySQL/Redis con Cowrie + OpenCanary, y una web señuelo FastAPI)
 + pipeline (Vector → OpenSearch → Dashboards). Todo corre en Docker.
+Visión general, estado actual y problemas conocidos: [docs/overview.md](https://github.com/Pigglet-Company/winnie-the-root/blob/main/docs/overview.md).
 
 ## Requisitos
 - Docker + Docker Compose v2 (`docker compose version`).

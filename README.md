@@ -16,6 +16,9 @@ permite explorarlos mediante gráficos, filtros y tablas.
 
 ## Contenido
 
+¿Primera vez? Empieza por la [visión general](docs/overview.md): qué es, cómo
+lanzarlo, qué funciona hoy y hacia dónde va.
+
 -   [Arquitectura](#arquitectura)
 -   [Tecnologías](#tecnologías)
 -   [Requisitos](#requisitos)
