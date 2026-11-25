@@ -2,11 +2,13 @@
 # Elige la etapa final (con o sin GeoIP) y arranca Vector.
 set -eu
 
-if [ -s /geoip/GeoLite2-City.mmdb ]; then
-  echo "[entrypoint] GeoLite2 encontrado: GeoIP ACTIVADO"
-  cp /etc/vector/final_geo.yaml /tmp/final.yaml
+DB=/geoip/city.mmdb
+[ -s "$DB" ] || [ ! -s /geoip/GeoLite2-City.mmdb ] || DB=/geoip/GeoLite2-City.mmdb   # nombre anterior
+if [ -s "$DB" ]; then
+  echo "[entrypoint] $DB encontrado: GeoIP ACTIVADO"
+  sed "s#/geoip/city.mmdb#$DB#" /etc/vector/final_geo.yaml > /tmp/final.yaml
 else
-  echo "[entrypoint] Sin /geoip/GeoLite2-City.mmdb: se indexa SIN campo geo (ver scripts/download_geolite.sh)"
+  echo "[entrypoint] Sin /geoip/city.mmdb: se indexa SIN campo geo (ver scripts/download_geoip.sh)"
   cp /etc/vector/final_nogeo.yaml /tmp/final.yaml
 fi
 

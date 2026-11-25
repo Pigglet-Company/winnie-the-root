@@ -56,5 +56,9 @@ jobs:
           ./scripts/preflight.sh --help
       - name: Public entry with Docker (Compose models, failed preflight, second init)
         run: ./tests/check_public_entry_docker.sh --cleanup
-      - name: Run Vector tests
+      - name: Download DB-IP City Lite for the GeoIP branch
+        run: bash modules/pipeline/scripts/download_geoip.sh
+      - name: Run Vector tests (no-geo and GeoIP branches)
         run: bash modules/pipeline/tests/run_vector_tests.sh
+      - name: Classify sample logs against the versioned baseline
+        run: bash modules/pipeline/tests/classify_samples.sh

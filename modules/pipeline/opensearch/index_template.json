@@ -60,7 +60,15 @@
         },
         "attack_type":     { "type": "keyword" },
         "mitre_technique": { "type": "keyword" },
-        "mitre_tactic":    { "type": "keyword" }
+        "mitre_tactic":    { "type": "keyword" },
+        "rule": {
+          "properties": {
+            "ruleset": { "type": "keyword" },
+            "version": { "type": "keyword" },
+            "id":      { "type": "keyword" },
+            "matches": { "type": "keyword" }
+          }
+        }
       }
     }
   }

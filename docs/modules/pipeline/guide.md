@@ -43,8 +43,14 @@ define `OPENSEARCH_ADMIN_PASSWORD` y entra a Dashboards con `admin` (tenant **Gl
 `ssh -L 5601:127.0.0.1:5601 usuario@vps`. El heap se ajusta con `OPENSEARCH_HEAP` (por defecto `1g`).
 
 ## 4. GeoIP (opcional)
-Pon `MAXMIND_LICENSE_KEY` en `.env`, ejecuta `./scripts/download_geolite.sh` y
-`docker compose restart pl-vector`. Sin clave todo funciona, salvo mapa y países (paneles vacíos).
+`./scripts/download_geoip.sh` descarga **DB-IP IP to City Lite** (CC BY 4.0, sin cuenta) a `geoip/city.mmdb`;
+después, `docker compose restart pl-vector`. Si `.env` tiene `MAXMIND_LICENSE_KEY`, descarga en su lugar
+MaxMind GeoLite2-City (EULA de MaxMind: borrar versiones antiguas a los 30 días). Sin base todo funciona salvo
+mapa y países (paneles vacíos). GeoIP es un enriquecimiento opcional y no cambia la clasificación.
+
+**Atribución obligatoria (CC BY 4.0):** quien muestre o publique datos con GeoIP de DB-IP debe citar
+«IP Geolocation by [DB-IP](https://db-ip.com)». La base no se sube al repositorio (`geoip/*.mmdb` está ignorado).
+DB-IP publica una edición al mes: vuelve a ejecutar el script para actualizarla.
 
 ## 5. Dashboards
 `dashboards/honeypot.ndjson` se genera con `python3 tools/build_dashboards.py`. Contiene: eventos totales,

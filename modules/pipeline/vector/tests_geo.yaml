@@ -1,0 +1,38 @@
+# Pruebas de la rama GeoIP (final_geo.yaml). Necesitan geoip/city.mmdb (DB-IP IP to City Lite,
+# CC BY 4.0: scripts/download_geoip.sh). Sin la base, tests/run_vector_tests.sh las marca PENDIENTE.
+# Los valores cambian cada mes: se comprueba la forma del enriquecimiento, no una ciudad concreta.
+tests:
+  - name: geo_ip_publica_lleva_pais_y_coordenadas
+    inputs:
+      - insert_at: norm_web
+        type: log
+        log_fields:
+          message: |-
+            {"@timestamp":"2026-11-23T12:00:00.000Z","event_id":"33333333-3333-4333-8333-333333333301","honeypot":"web","service":"http","event_type":"request","src_ip":"8.8.8.8","http":{"method":"GET","path":"/","user_agent":"Mozilla/5.0"}}
+    outputs:
+      - extract_from: final
+        conditions:
+          - type: vrl
+            source: |
+              assert_eq!(.geo.country_iso, "US")
+              assert!(is_string(.geo.country_name))
+              assert!(is_float(.geo.location.lat))
+              assert!(is_float(.geo.location.lon))
+              assert_eq!(.attack_type, "other")
+              assert_eq!(.rule.version, "1.2.0")
+
+  - name: geo_ip_privada_no_lleva_geo
+    inputs:
+      - insert_at: norm_cowrie
+        type: log
+        log_fields:
+          message: |-
+            {"eventid":"cowrie.session.connect","src_ip":"172.30.0.1","src_port":40101,"dst_ip":"172.30.0.10","dst_port":2222,"session":"ddddeeeeffff","protocol":"ssh","message":"New connection","sensor":"hp-cowrie","timestamp":"2026-11-23T12:00:01.000000Z"}
+    outputs:
+      - extract_from: final
+        conditions:
+          - type: vrl
+            source: |
+              assert!(!exists(.geo))
+              assert_eq!(.attack_type, "recon_scan")
+              assert_eq!(.rule.id, "connection.unauthenticated")

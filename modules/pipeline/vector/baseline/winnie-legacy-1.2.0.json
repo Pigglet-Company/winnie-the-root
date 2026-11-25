@@ -1,0 +1,102 @@
+{
+  "ruleset": "winnie-legacy",
+  "rule_version": "1.2.0",
+  "fixtures": {
+    "cowrie/cowrie.json": "012a59f7549a5b06f3fca1f8e5d4e1b5dc482c06c8d77bf13dbebb4fd4727e82",
+    "manifest.json": "805a19244b00db8ff03bcf1a2600abe037cf8e832cbeca0855c4781f18d55610",
+    "opencanary/opencanary.log": "563156596011dcf7cd871d7ea766b77c1fe8f46b3076bfc8bc2b8f771db2bc79",
+    "web/web.jsonl": "5099c6e4a476eaef8f5c37e7ccf112bdd466ed0ff3eb60145eb01bb4b1c8b03f"
+  },
+  "events": 6001,
+  "dropped": 7,
+  "attack_type": {
+    "brute_force": 3169,
+    "command_injection": 41,
+    "file_upload": 24,
+    "lfi_rfi": 43,
+    "malware_download": 78,
+    "other": 659,
+    "post_exploitation_command": 688,
+    "recon_scan": 950,
+    "redis_command": 177,
+    "sqli": 102,
+    "xss": 70
+  },
+  "attack_type_by_honeypot": {
+    "cowrie": {
+      "brute_force": 2295,
+      "file_upload": 9,
+      "malware_download": 78,
+      "other": 534,
+      "post_exploitation_command": 688,
+      "recon_scan": 534
+    },
+    "opencanary": {
+      "brute_force": 515,
+      "redis_command": 177
+    },
+    "web": {
+      "brute_force": 359,
+      "command_injection": 41,
+      "file_upload": 15,
+      "lfi_rfi": 43,
+      "other": 125,
+      "recon_scan": 416,
+      "sqli": 102,
+      "xss": 70
+    }
+  },
+  "mitre_by_attack_type": {
+    "brute_force": [
+      "T1110 Credential Access"
+    ],
+    "command_injection": [
+      "T1059 Execution"
+    ],
+    "file_upload": [
+      "T1505.003 Persistence"
+    ],
+    "lfi_rfi": [
+      "T1190 Initial Access"
+    ],
+    "malware_download": [
+      "T1105 Command and Control"
+    ],
+    "other": [
+      "- -"
+    ],
+    "post_exploitation_command": [
+      "T1059.004 Execution"
+    ],
+    "recon_scan": [
+      "T1595 Reconnaissance"
+    ],
+    "redis_command": [
+      "- -"
+    ],
+    "sqli": [
+      "T1190 Initial Access"
+    ],
+    "xss": [
+      "T1190 Initial Access"
+    ]
+  },
+  "rule_id": {
+    "-": 659,
+    "auth.login_attempt": 3169,
+    "command.after_login": 688,
+    "command.url_download": 39,
+    "connection.unauthenticated": 534,
+    "file.download": 39,
+    "file.upload": 24,
+    "redis.command": 177,
+    "web.command_injection": 41,
+    "web.lfi_rfi": 43,
+    "web.recon_scan": 416,
+    "web.sqli": 102,
+    "web.xss": 70
+  },
+  "overlaps": {
+    "web.command_injection + web.lfi_rfi": 8
+  }
+}
