@@ -21,8 +21,8 @@ services:
     environment:
       TZ: UTC
     ports:
-      - "${HP_BIND_ADDR:-0.0.0.0}:2222:2222"   # SSH
-      - "${HP_BIND_ADDR:-0.0.0.0}:2223:2223"   # Telnet
+      - "${HP_BIND_ADDR:-127.0.0.1}:2222:2222"   # SSH
+      - "${HP_BIND_ADDR:-127.0.0.1}:2223:2223"   # Telnet
     tmpfs:
       - /tmp:size=16m,mode=1777
     volumes:
@@ -59,9 +59,9 @@ services:
     environment:
       TZ: UTC
     ports:
-      - "${HP_BIND_ADDR:-0.0.0.0}:2121:2121"   # FTP
-      - "${HP_BIND_ADDR:-0.0.0.0}:3307:3306"   # MySQL
-      - "${HP_BIND_ADDR:-0.0.0.0}:6380:6379"   # Redis
+      - "${HP_BIND_ADDR:-127.0.0.1}:2121:2121"   # FTP
+      - "${HP_BIND_ADDR:-127.0.0.1}:3307:3306"   # MySQL
+      - "${HP_BIND_ADDR:-127.0.0.1}:6380:6379"   # Redis
     tmpfs:
       - /tmp:size=16m,mode=1777
       - /home/canary:size=16m,uid=10001,gid=10001,mode=0750

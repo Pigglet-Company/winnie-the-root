@@ -4,8 +4,8 @@ Esta guía es para alguien con pocos conocimientos técnicos que necesita entend
 arrancarlo, saber qué debería ver y qué falta todavía. Los detalles técnicos están en
 [README.md](../README.md), [RUN.md](RUN.md) y las guías de cada módulo.
 
-> **Estado descrito:** `main` en `31216e9`, más las PR pendientes de la unidad W02 (fixture de
-> pruebas web y escape de `/comment`). Actualizado el 25-11-2026.
+> **Estado descrito:** `main` en `31216e9`, más las PR pendientes de W02 (fixture de pruebas web
+> y escape de `/comment`) y W01 (arranque fiable). Actualizado el 25-11-2026.
 > Si este bloque no coincide con el último trabajo cerrado, la guía está desactualizada.
 
 ## 1. Qué es Winnie, en una frase
@@ -52,7 +52,7 @@ Cada pieza funciona y se prueba por separado. La raíz del repositorio las une.
 
 | Ruta | Para qué sirve |
 |---|---|
-| `scripts/` | Arrancar (`up.sh`), parar (`down.sh`) y preparar (`init.sh`) todo el sistema |
+| `scripts/` | Comprobar (`preflight.sh`), arrancar (`up.sh`), parar (`down.sh`) y preparar (`init.sh`) todo el sistema; `lib/contract.sh` reúne perfiles y puertos |
 | `modules/<pieza>/` | Código, configuración Docker (`compose.yml`), pruebas y README de cada pieza |
 | `docs/` | Documentación: esta guía, [RUN.md](RUN.md), [arquitectura](architecture.md), [calidad](quality.md), guías por módulo |
 | `docs/design.md` | **Contrato de diseño**: manda sobre el alcance, el orden y lo que significa «terminado» |
@@ -70,16 +70,18 @@ y unos 4 GB de RAM libres. En Linux, antes de arrancar ejecuta una vez
 > **Aviso de seguridad:** es un laboratorio. No lo publiques en Internet. Los señuelos registran
 > contraseñas y otros datos que envían los visitantes: trátalos como datos sensibles.
 
-Hasta que se cierre W01, los scripts no tienen permiso de ejecución en Git, así que se lanzan
-con `bash` delante:
+Antes de arrancar puedes ejecutar `./scripts/preflight.sh synthetic` (o `full`): revisa programas,
+memoria de OpenSearch y puertos **sin cambiar nada** y dice qué falta. `up.sh` lo ejecuta por ti y
+se detiene si algo falla. Todo escucha solo en `localhost` (127.0.0.1) salvo que lo cambies en el
+`.env` de un módulo (plantillas: `modules/*/.env.example`). Runbook detallado: [RUN.md](RUN.md).
 
 ### Opción 1 · Primera prueba: solo el panel con datos inventados
 
 No arranca ningún señuelo, así que no hay nada expuesto.
 
 ```bash
-bash scripts/up.sh synthetic
-bash modules/pipeline/tests/e2e_check.sh     # comprobación automática de extremo a extremo
+./scripts/up.sh synthetic
+./modules/pipeline/tests/e2e_check.sh        # comprobación automática de extremo a extremo
 ```
 
 **Qué deberías ver:** Docker descarga imágenes y arranca los contenedores `pl-*`. Después abre
@@ -93,8 +95,8 @@ probable es que `pl-vector` no arranque y el panel quede vacío. Diagnóstico: `
 ### Opción 2 · Sistema completo
 
 ```bash
-bash scripts/down.sh          # primero para lo anterior
-bash scripts/up.sh full
+./scripts/down.sh synthetic   # primero para lo anterior
+./scripts/up.sh full
 ```
 
 | Quieres probar… | Haz esto | Qué debería pasar |
@@ -105,13 +107,14 @@ bash scripts/up.sh full
 | Intranet web | <http://localhost:8080> | Ves una intranet corporativa; prueba `/login`, `/search?q=laura`, `/comment` |
 | Panel | <http://localhost:5601> | Tus pruebas aparecen como eventos clasificados al cabo de unos segundos |
 
-Para parar: `bash scripts/down.sh` (conserva los datos) o `bash scripts/down.sh --purge`
-(**borra** volúmenes, red y registros).
+Para parar: `./scripts/down.sh` (conserva los datos) o `./scripts/down.sh full --purge`
+(**borra** volúmenes, red y registros del proyecto). Si algo no se puede parar, `down.sh` lo dice
+y termina con error.
 
 ### Probar sin Docker (lo que cualquier persona puede repetir)
 
 ```bash
-python3 -m unittest discover -s tests          # pruebas de la raíz: 2 deben pasar
+python3 -m unittest discover -s tests          # pruebas de la raíz: 16 deben pasar
 cd modules/web-honeypot && pip install -r requirements-dev.txt && python -m pytest -q
 ```
 
@@ -122,6 +125,8 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 
 | Funcionalidad | Cómo verla | Estado |
 |---|---|---|
+| Comprobación previa: programas, `vm.max_map_count`, configuración efectiva y puertos ocupados, sin tocar nada | `./scripts/preflight.sh full` | Verificada sin Docker por pruebas (W01); con Docker real, en CI |
+| Parada que informa de errores y limpieza que solo borra recursos etiquetados del proyecto | `./scripts/down.sh synthetic` | Verificada sin Docker por pruebas (W01); con Docker real, en CI |
 | Señuelos SSH/Telnet/FTP/MySQL/Redis | Opción 2 y tabla de arriba | Código presente; **no verificado en Docker** en la última auditoría |
 | Intranet web falsa con 18 rutas (login, panel admin, buscador, `/ping`, subidas, ficheros «olvidados» como `/.env` o `/.git/config`) | <http://localhost:8080> o la suite web | Verificada por pruebas automáticas |
 | Registro de cada petición web como una línea JSON con identificador único | `docker exec hp-web tail /logs/web/web.jsonl` | Verificado por pruebas (W02) |
@@ -134,11 +139,7 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 
 | Problema | Qué notarás | Se arregla en |
 |---|---|---|
-| Los scripts no tienen permiso de ejecución en Git | `./scripts/up.sh` da «Permission denied»; usa `bash scripts/up.sh` | W01 |
-| Faltan los ficheros `.env.example` que citan la guía y `setup.sh` | No hay plantilla de configuración que copiar | W01 |
-| La web publica el puerto 8080 en **todas** las interfaces de red | Otros equipos de tu red pueden ver la intranet falsa | W01 |
-| No hay comprobación previa (preflight) de puertos, dependencias, etc. | Los errores aparecen a mitad del arranque | W01 |
-| `down.sh` oculta los errores | Puede decir «Parado» aunque algo haya fallado | W01 |
+| El instalador del VPS (`deploy/setup.sh`) no se ha ensayado en una máquina real | Puede fallar o dejar SSH/firewall a medias; úsalo solo en una máquina desechable | Ensayo autorizado en máquina desechable (pendiente) |
 | El clasificador de Vector no compila | Panel vacío, CI en rojo | W03 |
 | No existe una lista de proxies autorizados (solo `TRUST_PROXY` sí/no) | Prueba `xfailed` en la suite web | Pendiente de decisión (diseño V2) |
 | El volumen de registros tiene permisos 0777 | Cualquier contenedor puede escribir los registros de otro | W04 |
@@ -150,7 +151,7 @@ El contrato completo está en [design.md](design.md). Resumen:
 
 | Etapa | Unidades | Qué aportará respecto a hoy |
 |---|---|---|
-| **Arranque fiable** | W01 | Un checkout limpio arranca con un comando, escucha solo en `localhost` por defecto, valida requisitos antes de empezar y `down.sh` informa de errores reales |
+| **Arranque fiable** | W01 ✔ (en PR) | Un checkout limpio arranca con un comando, escucha solo en `localhost` por defecto, valida requisitos antes de empezar y `down.sh` informa de errores reales |
 | **Web y reglas** | W02 ✔ (en PR), W03 | Pruebas web en verde; clasificador que compila con casos positivos y negativos |
 | **Contención** | W04 | Cada servicio escribe solo en su sitio, con cuotas; un señuelo comprometido no contamina a los demás |
 | **Contabilidad** | W05 | Recuentos exactos de eventos por fuente: se sabe si se perdió algo |

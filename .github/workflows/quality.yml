@@ -32,8 +32,8 @@ jobs:
             else
               sh -n "$script"
             fi
-          done < <(find modules -name '*.sh' -print0)
-      - name: Check fixture contract
+          done < <(find scripts modules tests -name '*.sh' -print0)
+      - name: Check fixture and public entry contracts
         run: python -m unittest discover -s tests -v
       - name: Check generated dashboard
         working-directory: modules/pipeline
@@ -49,12 +49,12 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Validate Compose models
+      - name: Public entry help without chmod
         run: |
-          docker compose -f modules/ssh-honeypot/compose.yml config --quiet
-          docker compose -f modules/web-honeypot/compose.yml config --quiet
-          docker compose -f modules/pipeline/compose.yml config --quiet
-          docker compose -f modules/pipeline/compose.yml -f modules/pipeline/compose.dev.yml config --quiet
-          SECURITY_MODE=prod docker compose -f modules/pipeline/compose.yml config --quiet
+          ./scripts/up.sh --help
+          ./scripts/down.sh --help
+          ./scripts/preflight.sh --help
+      - name: Public entry with Docker (Compose models, failed preflight, second init)
+        run: ./tests/check_public_entry_docker.sh --cleanup
       - name: Run Vector tests
         run: bash modules/pipeline/tests/run_vector_tests.sh
