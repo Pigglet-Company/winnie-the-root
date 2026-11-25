@@ -8,17 +8,21 @@ from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.types import Receive, Scope, Send
 
 from app.config import Settings
 from app.main import create_app
 
 WEAK_USER, WEAK_PASS = "admin", "Passw0rd123"
+TEST_PEER = ("203.0.113.5", 51234)  # peer inyectado en la frontera ASGI (scope["client"])
 
 
 class Honeypot:
     """App + cliente de pruebas + utilidades para leer el web.jsonl generado."""
 
-    def __init__(self, tmp_path: Path, **overrides: Any) -> None:
+    def __init__(
+        self, tmp_path: Path, peer: tuple[str, int] = TEST_PEER, **overrides: Any
+    ) -> None:
         base = Settings(
             log_dir=str(tmp_path / "logs"),
             upload_dir=str(tmp_path / "uploads"),
@@ -29,10 +33,15 @@ class Honeypot:
         )
         self.settings = dataclasses.replace(base, **overrides)
         self.app = create_app(self.settings)
+
+        async def app_with_test_peer(scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] == "http":
+                scope = {**scope, "client": peer}
+            await self.app(scope, receive, send)
+
         self.client = TestClient(
-            self.app,
+            app_with_test_peer,
             base_url="http://intranet.test:8080",
-            client=("203.0.113.5", 51234),
             follow_redirects=False,
         )
 
@@ -53,6 +62,7 @@ class Honeypot:
         return sorted(p for p in d.iterdir()) if d.exists() else []
 
     def close(self) -> None:
+        self.client.close()
         self.app.state.events.close()
 
 
