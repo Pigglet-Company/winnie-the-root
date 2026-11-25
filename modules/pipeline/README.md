@@ -40,8 +40,14 @@ modo: `docker compose down -v` (el volumen de datos cambia de esquema de segurid
 `ssh -L 5601:127.0.0.1:5601 usuario@vps`. El heap se ajusta con `OPENSEARCH_HEAP` (por defecto `1g`).
 
 ## 4. GeoIP (opcional)
-Pon `MAXMIND_LICENSE_KEY` en `.env`, ejecuta `./scripts/download_geolite.sh` y
-`docker compose restart pl-vector`. Sin clave todo funciona, salvo mapa y países (paneles vacíos).
+`./scripts/download_geoip.sh` descarga **DB-IP IP to City Lite** (CC BY 4.0, sin cuenta) a `geoip/city.mmdb`;
+después, `docker compose restart pl-vector`. Si `.env` tiene `MAXMIND_LICENSE_KEY`, descarga en su lugar
+MaxMind GeoLite2-City (EULA de MaxMind: borrar versiones antiguas a los 30 días). Sin base todo funciona salvo
+mapa y países (paneles vacíos). GeoIP es un enriquecimiento opcional y no cambia la clasificación.
+
+**Atribución obligatoria (CC BY 4.0):** quien muestre o publique datos con GeoIP de DB-IP debe citar
+«IP Geolocation by [DB-IP](https://db-ip.com)». La base no se sube al repositorio (`geoip/*.mmdb` está ignorado).
+DB-IP publica una edición al mes: vuelve a ejecutar el script para actualizarla.
 
 ## 5. Dashboards
 `dashboards/honeypot.ndjson` se genera con `python3 tools/build_dashboards.py`. Contiene: eventos totales,
@@ -73,7 +79,7 @@ eventos»). Los comandos de la shell emulada de Cowrie siguen siendo `post_explo
 Para cambiar una regla: edítala, sube `RULES_VERSION`, añade casos positivos, negativos y de solape en
 `vector/tests.yaml` y regenera el baseline:
 ```bash
-./tests/run_vector_tests.sh             # vector test (casos positivos, negativos, solape e inocuos)
+./tests/run_vector_tests.sh             # vector test (positivos, negativos, solape, inocuos; Geo si hay base)
 ./tests/classify_samples.sh --write     # nuevo vector/baseline/winnie-legacy-<versión>.json; revisa el diff
 ./tests/classify_samples.sh             # compara las muestras de los paneles con el baseline (lo hace CI)
 docker compose restart pl-vector

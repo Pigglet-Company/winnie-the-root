@@ -1,13 +1,23 @@
 # =============================================================================
-# geo.vrl  -  enriquecimiento GeoIP (solo si hay GeoLite2-City.mmdb)
+# geo.vrl  -  enriquecimiento GeoIP (solo si hay /geoip/city.mmdb)
+# Registro en esquema GeoIP2 City (DB-IP City Lite o GeoLite2-City), nombres en inglés.
 # IPs privadas / no encontradas: simplemente no llevan campo "geo".
+# GeoIP es un enriquecimiento opcional: no cambia la clasificación (diseño V2).
 # =============================================================================
 rec, err = get_enrichment_table_record("geoip", { "ip": .src_ip })
 if err == null {
-  .geo.country_iso = rec.country_code
-  .geo.country_name = rec.country_name
-  .geo.city = rec.city_name
-  if rec.latitude != null && rec.longitude != null {
-    .geo.location = { "lat": rec.latitude, "lon": rec.longitude }
+  iso = rec.country.iso_code
+  if iso != null {
+    .geo.country_iso = iso
+    .geo.country_name = rec.country.names.en
+  }
+  city = rec.city.names.en
+  if city != null {
+    .geo.city = city
+  }
+  lat = rec.location.latitude
+  lon = rec.location.longitude
+  if lat != null && lon != null {
+    .geo.location = { "lat": lat, "lon": lon }
   }
 }

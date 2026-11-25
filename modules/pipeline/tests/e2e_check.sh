@@ -71,7 +71,7 @@ HPS=$(os POST /honeypot-events/_search '{"size":0,"aggs":{"t":{"terms":{"field":
 [ "$TYPES" -ge 6 ] && ok "${TYPES} attack_type distintos" || fail "solo ${TYPES} attack_type distintos"
 [ "$HPS" -ge 3 ] && ok "${HPS} honeypots distintos" || fail "solo ${HPS} honeypots"
 G=$(os POST /honeypot-events/_count '{"query":{"exists":{"field":"geo.location"}}}' | num)
-if [ "${G:-0}" -gt 0 ]; then ok "GeoIP activo (${G} eventos con geo.location)"; else echo "  [INFO] sin GeoIP (esperado si no hay MAXMIND_LICENSE_KEY)"; fi
+if [ "${G:-0}" -gt 0 ]; then ok "GeoIP activo (${G} eventos con geo.location)"; else echo "  [INFO] sin GeoIP (esperado si no se ejecutó scripts/download_geoip.sh)"; fi
 
 echo "7) Cola de errores (líneas corruptas: ${CORRUPT})"
 DL=$(docker exec pl-vector sh -c 'cat /var/lib/vector/dead_letter/*.jsonl 2>/dev/null | wc -l' 2>/dev/null | tr -d ' ')

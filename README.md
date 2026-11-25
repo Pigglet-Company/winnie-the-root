@@ -495,12 +495,12 @@ valores necesarios:
 No subas archivos `.env`, contraseñas ni claves de MaxMind al
 repositorio.
 
-Para habilitar GeoIP, configura `MAXMIND_LICENSE_KEY` en
-`modules/pipeline/.env` y ejecuta:
+Para habilitar GeoIP con DB-IP IP to City Lite (CC BY 4.0; cita «IP Geolocation by DB-IP» al mostrar
+los datos), ejecuta:
 
 ``` bash
 cd modules/pipeline
-./scripts/download_geolite.sh
+./scripts/download_geoip.sh      # con MAXMIND_LICENSE_KEY en .env usa MaxMind GeoLite2-City
 docker compose restart pl-vector
 ```
 

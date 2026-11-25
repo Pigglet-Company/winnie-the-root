@@ -5,7 +5,7 @@ arrancarlo, saber qué debería ver y qué falta todavía. Los detalles técnico
 [README.md](../README.md), [RUN.md](RUN.md) y las guías de cada módulo.
 
 > **Estado descrito:** `main` en `31216e9`, más las PR pendientes de W02 (fixture de pruebas web
-> y escape de `/comment`), W01 (arranque fiable) y W03 (reglas de clasificación). Actualizado el 25-11-2026.
+> y escape de `/comment`), W01 (arranque fiable) y W03 (reglas de clasificación y GeoIP con DB-IP). Actualizado el 25-11-2026.
 > Si este bloque no coincide con el último trabajo cerrado, la guía está desactualizada.
 
 ## 1. Qué es Winnie, en una frase
@@ -136,6 +136,7 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 | Clasificación de ataques (SQLi, XSS, fuerza bruta…) con mapeo MITRE ATT&CK | Panel, campos `attack_type` y `rule.id` | Verificada sin Docker con Vector 0.43.1 (W03): 44 casos, incluidos solapes y controles inocuos |
 | Cada evento dice qué regla y qué versión lo clasificó; el hecho (un login, un comando Redis, una descarga) se guarda aparte de su interpretación ATT&CK | Campos `rule.version`, `rule.id`, `rule.matches` | Verificado (W03); se puede volver a la versión anterior con un comando ([guía](../modules/pipeline/README.md#reglas-versiones-y-vuelta-atrás)) |
 | Las comprobaciones internas de salud de los señuelos ya no aparecen como «escaneos» | Panel: menos `recon_scan` en un sistema parado | Verificado por pruebas (W03) |
+| Mapa y países del atacante con la base gratuita DB-IP City Lite (hay que citar a DB-IP al mostrar los datos) | `modules/pipeline/scripts/download_geoip.sh` y reiniciar `pl-vector` | Verificado sin Docker con Vector 0.43.1 (W03); sin la base, el resto funciona igual |
 | Un comando Redis aparece como «comando Redis», sin técnica MITRE: el señuelo solo lo imita y no prueba que se ejecutara nada | Panel: tipo `redis_command` | Verificado por pruebas (W03) |
 
 ## 5. Problemas conocidos del estado actual
@@ -143,7 +144,6 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 | Problema | Qué notarás | Se arregla en |
 |---|---|---|
 | El instalador del VPS (`deploy/setup.sh`) no se ha ensayado en una máquina real | Puede fallar o dejar SSH/firewall a medias; úsalo solo en una máquina desechable | Ensayo autorizado en máquina desechable (pendiente) |
-| La rama GeoIP (mapa por país) no se ha probado: falta la base de datos MaxMind autorizada | El mapa del panel queda vacío; el resto funciona | Ensayo con MMDB autorizada (pendiente) |
 | No existe una lista de proxies autorizados (solo `TRUST_PROXY` sí/no) | Prueba `xfailed` en la suite web | Pendiente de decisión (diseño V2) |
 | El volumen de registros tiene permisos 0777 | Cualquier contenedor puede escribir los registros de otro | W04 |
 | CI en rojo desde la PR #6 | Marca roja en GitHub | Se corrige al integrar las PR de W02 y W03 |
@@ -192,6 +192,7 @@ El contrato completo está en [design.md](design.md). Resumen:
 | **FastAPI** | Herramienta de Python con la que está hecha la intranet web falsa (pieza B). |
 | **Vector** | Programa «cartero» de la pieza C. Lee los ficheros de registro de los señuelos, los ordena en un formato común, los **clasifica** (p. ej. «esto es una inyección SQL») y los entrega a OpenSearch. Sus reglas están escritas en un lenguaje propio llamado **VRL**. |
 | **Regla versionada** | Cada clasificación indica qué regla la decidió y en qué versión (`rule.id`, `rule.version`). Si una regla nueva clasifica peor, se vuelve a la versión anterior y se compara con su *baseline*: el recuento esperado sobre los datos de ejemplo. |
+| **GeoIP / MMDB** | Una base de datos que traduce una dirección IP a país, ciudad y coordenadas aproximadas; el fichero `.mmdb` es su formato. Winnie usa por defecto la gratuita DB-IP City Lite. Es aproximada: no identifica a una persona. |
 | **OpenSearch** | Base de datos especializada en guardar y buscar muchos eventos rápidamente (pieza C). Escucha en el puerto 9200, solo dentro de Docker. |
 | **OpenSearch Dashboards** | La web con gráficos y tablas para explorar los eventos guardados (<http://localhost:5601>). |
 | **Pipeline** | La cadena completa de procesamiento: señuelo → registro → Vector → OpenSearch → Dashboards. |

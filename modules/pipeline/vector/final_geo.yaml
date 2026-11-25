@@ -1,9 +1,10 @@
-# Etapa final CON GeoIP (se usa si existe /geoip/GeoLite2-City.mmdb).
+# Etapa final CON GeoIP (se usa si existe /geoip/city.mmdb).
+# Tabla "mmdb": lee el registro tal cual (esquema GeoIP2 City). Vale para DB-IP IP to City Lite
+# (por defecto, CC BY 4.0) y para MaxMind GeoLite2-City.
 enrichment_tables:
   geoip:
-    type: geoip
-    path: /geoip/GeoLite2-City.mmdb
-    locale: en
+    type: mmdb
+    path: /geoip/city.mmdb
 
 transforms:
   final:
