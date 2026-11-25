@@ -234,7 +234,7 @@ async def ping(request: Request) -> Response:
 # --------------------------------------------------------------------------- XSS reflejado
 @route("/comment", "/comment.php", methods=GET_HEAD_POST)
 async def comment(request: Request) -> Response:
-    """Refleja name/comment sin escapar SOLO en la respuesta al propio solicitante (no se guardan)."""
+    """Refleja name/comment SOLO al propio solicitante (no se guardan). Escapado salvo COMMENT_REFLECT_RAW."""
     settings = _settings(request)
     fields = await read_fields(request)
     name = fields.get("name", "")[:500]
@@ -243,7 +243,7 @@ async def comment(request: Request) -> Response:
     headers = {"X-XSS-Protection": "0", "Cache-Control": "no-store"}
     if settings.comment_csp:
         headers["Content-Security-Policy"] = settings.comment_csp
-    return html(pages.comment_page(name, text), headers=headers)
+    return html(pages.comment_page(name, text, raw=settings.comment_reflect_raw), headers=headers)
 
 
 # --------------------------------------------------------------------------- subida de ficheros

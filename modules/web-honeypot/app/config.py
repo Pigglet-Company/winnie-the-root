@@ -84,7 +84,8 @@ class Settings:
 
     # --- Simulaciones --------------------------------------------------------------
     sleep_cap_s: float = 3.0                        # tope de SLEEP() simulado
-    comment_csp: str = ""                           # CSP opcional para /comment (vacío = XSS "vivo")
+    comment_reflect_raw: bool = False               # True = /comment refleja SIN escapar (XSS "vivo", solo laboratorio)
+    comment_csp: str = ""                           # CSP opcional para /comment
 
     @property
     def log_path(self) -> str:
@@ -117,5 +118,6 @@ class Settings:
             rate_limit_per_min=_env_int("RATE_LIMIT_PER_MIN", d.rate_limit_per_min),
             rate_limit_burst=_env_int("RATE_LIMIT_BURST", d.rate_limit_burst),
             sleep_cap_s=_env_float("SLEEP_CAP_S", d.sleep_cap_s),
+            comment_reflect_raw=_env_bool("COMMENT_REFLECT_RAW", d.comment_reflect_raw),
             comment_csp=_env_str("COMMENT_CSP", d.comment_csp),
         )
