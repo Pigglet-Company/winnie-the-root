@@ -42,7 +42,7 @@ La web queda en <http://localhost:8080>. Parar: `docker compose down` (los volú
 | `/search?q=` | SQLi estilo MySQL: errores 1064/1222/1054/1105, `UNION SELECT` con filas falsas, `' OR 1=1` → tabla de usuarios con hashes, blind booleano y `SLEEP()` (acotado) | `request` |
 | `/view?file=` | LFI/traversal contra un **diccionario en memoria** (`/etc/passwd` falso, `config.php` falso, `php://filter`…). `/etc/shadow` → *Permission denied*; URLs (RFI) rechazadas | `request` |
 | `/ping?host=` | Command injection: ping falso y, con `; \| && $()` + `id`, `whoami`, `uname`, `cat`…, salida falsa. No ejecuta nada | `request` |
-| `/comment` | XSS reflejado **solo** en la respuesta al solicitante; no se guarda ni se muestra a otros | `request` |
+| `/comment` | Refleja el comentario **solo** al solicitante, escapado por defecto (DOM inerte); `COMMENT_REFLECT_RAW=true` activa el XSS reflejado de laboratorio. No se guarda ni se muestra a otros | `request` |
 | `/upload` | Acepta cualquier fichero (≤ 2 MB): nombre aleatorio, permisos `0640`, volumen aislado, **nunca se sirve**; responde con URL falsa | `file_upload` |
 | `/robots.txt`, `/.env`, `/.git/config`, `/.git/HEAD`, `/backup.zip` (ZIP vacío de 22 bytes), `/server-status` | "Descuidos" para escáneres (credenciales FALSAS) | `request` |
 | cualquier otra | 404/405/500 con el formato de Apache 2.4 | `request` |
@@ -66,7 +66,7 @@ más `auth{}` o `file{name,sha256,size,url}` según el caso. Ver `samples/web.sa
 
 Consulta [app/config.py](../../../modules/web-honeypot/app/config.py). Principales: `WEB_HOST_PORT`, `SERVER_HEADER`, `POWERED_BY`, `WEAK_USER`/`WEAK_PASS` (vacío = desactivada),
 `TRUST_PROXY`, `LOG_*`, `UPLOAD_*` (tope por fichero, nº y espacio total), `MAX_BODY_BYTES`, `BODY_READ_TIMEOUT_S`,
-`REQUEST_TIMEOUT_S`, `RATE_LIMIT_PER_MIN`/`RATE_LIMIT_BURST` (token bucket por IP; 0 = sin límite), `SLEEP_CAP_S`, `COMMENT_CSP`.
+`REQUEST_TIMEOUT_S`, `RATE_LIMIT_PER_MIN`/`RATE_LIMIT_BURST` (token bucket por IP; 0 = sin límite), `SLEEP_CAP_S`, `COMMENT_REFLECT_RAW`, `COMMENT_CSP`.
 
 ## Seguridad del contenedor
 
