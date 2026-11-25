@@ -133,10 +133,10 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 | La IP del atacante se toma de la conexión real; cabeceras como `X-Forwarded-For` solo se aceptan si se activa `TRUST_PROXY` | Suite web | Verificado (W02) |
 | `/comment` muestra el comentario **escapado** (inofensivo) por defecto; `COMMENT_REFLECT_RAW=true` activa el fallo XSS de laboratorio | Envía `<script>alert(1)</script>` en <http://localhost:8080/comment> | Verificado (W02) |
 | Datos de ejemplo y panel con 19 objetos (gráficos, tablas, búsqueda guardada) | Opción 1 | El panel se regenera idéntico; con W03 los 6001 eventos de ejemplo se clasifican igual que en la última versión validada |
-| Clasificación de ataques (SQLi, XSS, fuerza bruta…) con mapeo MITRE ATT&CK | Panel, campos `attack_type` y `rule.id` | Verificada sin Docker con Vector 0.43.1 (W03): 44 casos, incluidos solapes y controles inocuos |
+| Clasificación de ataques (SQLi, XSS, fuerza bruta…) con mapeo MITRE ATT&CK | Panel, campos `attack_type` y `rule.id` | Verificada con Vector 0.43.1, en local y en CI con Docker (W03): 44 casos, incluidos solapes y controles inocuos, y 6001 eventos de muestra iguales a la versión de referencia |
 | Cada evento dice qué regla y qué versión lo clasificó; el hecho (un login, un comando Redis, una descarga) se guarda aparte de su interpretación ATT&CK | Campos `rule.version`, `rule.id`, `rule.matches` | Verificado (W03); se puede volver a la versión anterior con un comando ([guía](../modules/pipeline/README.md#reglas-versiones-y-vuelta-atrás)) |
 | Las comprobaciones internas de salud de los señuelos ya no aparecen como «escaneos» | Panel: menos `recon_scan` en un sistema parado | Verificado por pruebas (W03) |
-| Mapa y países del atacante con la base gratuita DB-IP City Lite (hay que citar a DB-IP al mostrar los datos) | `modules/pipeline/scripts/download_geoip.sh` y reiniciar `pl-vector` | Verificado sin Docker con Vector 0.43.1 (W03); sin la base, el resto funciona igual |
+| Mapa y países del atacante con la base gratuita DB-IP City Lite (hay que citar a DB-IP al mostrar los datos) | `modules/pipeline/scripts/download_geoip.sh` y reiniciar `pl-vector` | Verificado en local y en CI con Docker (W03); sin la base, el resto funciona igual |
 | Un comando Redis aparece como «comando Redis», sin técnica MITRE: el señuelo solo lo imita y no prueba que se ejecutara nada | Panel: tipo `redis_command` | Verificado por pruebas (W03) |
 
 ## 5. Problemas conocidos del estado actual
