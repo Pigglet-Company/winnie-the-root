@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import stat
+import uuid
 from pathlib import Path
 
 import pytest
@@ -212,6 +214,46 @@ def test_x_forwarded_for_only_when_trusted(make_hp) -> None:  # type: ignore[no-
     hp = make_hp(trust_proxy=True)
     hp.client.get("/", headers={"X-Forwarded-For": "6.6.6.6, 198.51.100.9"})
     assert hp.last()["src_ip"] == "198.51.100.9" and hp.last()["src_port"] is None
+
+
+def test_ipv4_mapped_peer_is_normalized_at_asgi_boundary(make_hp) -> None:  # type: ignore[no-untyped-def]
+    hp = make_hp(peer=("::ffff:192.0.2.7", 40000))
+    hp.client.get("/")
+    assert hp.last()["src_ip"] == "192.0.2.7" and hp.last()["src_port"] == 40000
+
+
+@pytest.mark.parametrize("trust_proxy", [False, True])
+def test_other_forwarding_headers_never_replace_the_peer(make_hp, trust_proxy: bool) -> None:  # type: ignore[no-untyped-def]
+    hp = make_hp(trust_proxy=trust_proxy)
+    hp.client.get("/", headers={"Forwarded": "for=6.6.6.6", "X-Real-IP": "6.6.6.6"})
+    ev = hp.last()
+    assert ev["src_ip"] == "203.0.113.5" and ev["src_port"] == 51234
+    assert ev["http"]["headers"]["x-real-ip"] == "6.6.6.6"  # se registra como observado, no como origen
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Capacidad ausente (V2 P1 web, middleware.py 38-55): TRUST_PROXY es booleano y no "
+    "comprueba que el peer sea el proxy autorizado. Lo cierra la PR que añada la lista de proxies.",
+)
+def test_forwarded_for_from_peer_outside_authorized_proxies_is_ignored(make_hp) -> None:  # type: ignore[no-untyped-def]
+    hp = make_hp(trust_proxy=True, peer=("203.0.113.5", 51234))  # peer directo, no es un proxy
+    hp.client.get("/", headers={"X-Forwarded-For": "6.6.6.6"})
+    assert hp.last()["src_ip"] == "203.0.113.5"
+
+
+def test_each_request_is_one_identifiable_event_with_fictitious_data(hp: Honeypot) -> None:
+    r1 = hp.client.get("/search?q=laura")
+    r2 = hp.client.get("/search?q=laura")
+    assert r1.status_code == 200 and "Laura Gómez" in r1.text  # dato del directorio simulado
+    lines = hp.log_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    events = [json.loads(line) for line in lines]
+    for ev in events:
+        validate_event(ev)
+        assert str(uuid.UUID(ev["event_id"])) == ev["event_id"]
+    assert events[0]["event_id"] != events[1]["event_id"]
+    assert r2.status_code == 200
 
 
 def test_logging_failure_never_takes_the_app_down(make_hp) -> None:  # type: ignore[no-untyped-def]
