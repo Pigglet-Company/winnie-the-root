@@ -178,6 +178,38 @@ El contrato completo está en [design.md](design.md). Resumen:
 - **`modules/ssh-honeypot/deploy/setup.sh` modifica SSH y el cortafuegos del servidor:** no lo ejecutes en una
   máquina real sin autorización y un ensayo previo.
 
+## 8. Glosario
+
+| Término | Qué significa aquí |
+|---|---|
+| **Honeypot / señuelo** | Servicio falso que parece real para atraer atacantes y registrar lo que hacen. No contiene nada de valor. |
+| **Cowrie** | Programa que imita un servidor SSH/Telnet: deja «entrar» al atacante en un Linux falso y graba sus comandos (pieza A). |
+| **OpenCanary** | Programa que imita servicios como FTP, MySQL o Redis y avisa cuando alguien se conecta (pieza A). |
+| **FastAPI** | Herramienta de Python con la que está hecha la intranet web falsa (pieza B). |
+| **Vector** | Programa «cartero» de la pieza C. Lee los ficheros de registro de los señuelos, los ordena en un formato común, los **clasifica** (p. ej. «esto es una inyección SQL») y los entrega a OpenSearch. Sus reglas están escritas en un lenguaje propio llamado **VRL**. |
+| **OpenSearch** | Base de datos especializada en guardar y buscar muchos eventos rápidamente (pieza C). Escucha en el puerto 9200, solo dentro de Docker. |
+| **OpenSearch Dashboards** | La web con gráficos y tablas para explorar los eventos guardados (<http://localhost:5601>). |
+| **Pipeline** | La cadena completa de procesamiento: señuelo → registro → Vector → OpenSearch → Dashboards. |
+| **Evento** | Una interacción registrada (una petición web, un intento de login, un comando) guardada como una línea **JSON**, un formato de texto estructurado. |
+| **Clasificación / `attack_type`** | Etiqueta que Vector pone a cada evento según el tipo de ataque que parece. |
+| **MITRE ATT&CK** | Catálogo público y estándar de técnicas de ataque. Cada clasificación se asocia a una de sus técnicas. |
+| **SQLi, XSS, fuerza bruta…** | Tipos de ataque. SQLi: colar órdenes de base de datos en un formulario. XSS: colar código que se ejecute en el navegador de otro. Fuerza bruta: probar muchas contraseñas. |
+| **Escapar** | Convertir caracteres especiales (`<`, `>`) en texto inofensivo para que el navegador los muestre en vez de ejecutarlos. |
+| **Docker / contenedor** | Docker ejecuta cada programa en una «caja» aislada (contenedor) con todo lo que necesita. |
+| **Docker Compose / `compose.yml`** | Fichero que describe qué contenedores arrancar juntos, con qué puertos y qué permisos. |
+| **Puerto** | Número que identifica un servicio en una máquina (8080 = web falsa, 5601 = panel). |
+| **localhost / 127.0.0.1 (loopback)** | «Esta misma máquina». Un servicio que escucha solo ahí no es visible desde otros equipos. |
+| **`.env`** | Fichero local de configuración de cada módulo (contraseñas, puertos). Nunca se sube a Git. `.env.example` es su plantilla sin secretos. |
+| **Proxy / `TRUST_PROXY`** | Un proxy es un intermediario que reenvía peticiones. Si se activa `TRUST_PROXY`, la web cree la IP que el proxy indica en una cabecera; si no, usa la IP de la conexión real. |
+| **Preflight** | Comprobación previa al arranque (puertos libres, programas instalados…) para fallar pronto y con un mensaje claro. |
+| **Git, rama, commit, PR** | Git guarda el historial del código. Una rama es una línea de trabajo aparte; un commit, un cambio guardado; una PR (pull request), la propuesta de integrar una rama en `main` tras revisión. |
+| **CI** | Batería de comprobaciones automáticas que GitHub ejecuta en cada PR. «En rojo» = algo falla. |
+| **Prueba / fixture / `xfailed`** | Una prueba comprueba un comportamiento automáticamente. Un fixture es la preparación común de las pruebas. `xfailed` = prueba que se sabe que falla y documenta una carencia conocida. |
+| **Unidades W/H** | Bloques de trabajo del plan (`docs/design.md`): W01–W06 llevan a la entrega académica, H01–H07 al producto. |
+| **TFM** | Trabajo Fin de Máster: la entrega académica del proyecto (unidad W06). |
+| **SOC** | Centro de operaciones de seguridad: el equipo que analiza las alertas. |
+| **On-prem** | Instalado en las máquinas del propio cliente, no en la nube. |
+
 ## Mantener esta guía
 
 Actualiza esta guía al cerrar cada unidad W/H que cambie cómo se lanza el sistema, qué funciona
