@@ -1,0 +1,184 @@
+# Winnie: visión general del proyecto
+
+Esta guía es para alguien con pocos conocimientos técnicos que necesita entender el proyecto,
+arrancarlo, saber qué debería ver y qué falta todavía. Los detalles técnicos están en
+[README.md](../README.md), [RUN.md](RUN.md) y las guías de cada módulo.
+
+> **Estado descrito:** `main` en `31216e9`, más las PR pendientes de la unidad W02 (fixture de
+> pruebas web y escape de `/comment`). Actualizado el 25-11-2026.
+> Si este bloque no coincide con el último trabajo cerrado, la guía está desactualizada.
+
+## 1. Qué es Winnie, en una frase
+
+Winnie es un **honeypot**: una colección de servicios falsos (un servidor SSH, una intranet web,
+FTP, MySQL, Redis…) que parecen reales y atraen a los atacantes. No protegen nada de valor.
+Su trabajo es **registrar todo lo que intenta el atacante** y mostrarlo en un panel de control
+para que una persona lo pueda analizar.
+
+Piénsalo como una casa de muestra con cámaras: nadie vive allí y todo lo que se toca queda grabado.
+
+## 2. Las tres piezas
+
+```
+  Atacante (o tú, haciendo pruebas)
+        │
+        ▼
+ ┌──────────────────────┐   ┌──────────────────────┐
+ │ A · Señuelos de red  │   │ B · Intranet web     │
+ │ SSH, Telnet, FTP,    │   │ falsa (login, panel, │
+ │ MySQL, Redis         │   │ buscador, subidas…)  │
+ └──────────┬───────────┘   └──────────┬───────────┘
+            │  cada interacción = una línea en un fichero de registro
+            ▼                          ▼
+ ┌─────────────────────────────────────────────────┐
+ │ C · Pipeline: Vector lee y clasifica los         │
+ │     registros → OpenSearch los guarda →          │
+ │     Dashboards los muestra en gráficos           │
+ └─────────────────────────────────────────────────┘
+                       │
+                       ▼
+          Tú, en el navegador: http://localhost:5601
+```
+
+| Pieza | Carpeta | Qué hace | Tecnología |
+|---|---|---|---|
+| **A** | `modules/ssh-honeypot/` | Finge ser un servidor Linux con SSH/Telnet y otros servicios de red | Cowrie, OpenCanary |
+| **B** | `modules/web-honeypot/` | Finge ser la intranet de una empresa con fallos de seguridad *simulados* | Python, FastAPI |
+| **C** | `modules/pipeline/` | Recoge, clasifica (p. ej. «SQL injection») y visualiza los eventos | Vector, OpenSearch, Dashboards |
+
+Cada pieza funciona y se prueba por separado. La raíz del repositorio las une.
+
+### Mapa de carpetas
+
+| Ruta | Para qué sirve |
+|---|---|
+| `scripts/` | Arrancar (`up.sh`), parar (`down.sh`) y preparar (`init.sh`) todo el sistema |
+| `modules/<pieza>/` | Código, configuración Docker (`compose.yml`), pruebas y README de cada pieza |
+| `docs/` | Documentación: esta guía, [RUN.md](RUN.md), [arquitectura](architecture.md), [calidad](quality.md), guías por módulo |
+| `docs/design.md` | **Contrato de diseño**: manda sobre el alcance, el orden y lo que significa «terminado» |
+| `docs/requisites.md`, `docs/investigation.md` | El diseño V2 detallado y la investigación que lo justifica |
+| `tests/` | Pruebas de la raíz (comprueban los datos de ejemplo compartidos) |
+| `.github/workflows/quality.yml` | La batería automática (CI) que GitHub ejecuta en cada cambio |
+| `AGENTS.md` | Reglas para los agentes de IA que trabajan en el repo |
+
+## 3. Cómo lanzarlo
+
+**Necesitas:** Linux (o Docker Desktop en Mac/Windows), Docker con Compose v2, `python3`, `curl`
+y unos 4 GB de RAM libres. En Linux, antes de arrancar ejecuta una vez
+`sudo sysctl -w vm.max_map_count=262144` (OpenSearch lo exige).
+
+> **Aviso de seguridad:** es un laboratorio. No lo publiques en Internet. Los señuelos registran
+> contraseñas y otros datos que envían los visitantes: trátalos como datos sensibles.
+
+Hasta que se cierre W01, los scripts no tienen permiso de ejecución en Git, así que se lanzan
+con `bash` delante:
+
+### Opción 1 · Primera prueba: solo el panel con datos inventados
+
+No arranca ningún señuelo, así que no hay nada expuesto.
+
+```bash
+bash scripts/up.sh synthetic
+bash modules/pipeline/tests/e2e_check.sh     # comprobación automática de extremo a extremo
+```
+
+**Qué deberías ver:** Docker descarga imágenes y arranca los contenedores `pl-*`. Después abre
+<http://localhost:5601/app/dashboards#/view/hp-dashboard>, elige «últimos 30 días» y deberías
+ver gráficos con ataques ficticios por tipo y servicio. `e2e_check.sh` debe terminar sin
+errores.
+
+**Qué pasa hoy (sin W03):** el clasificador de Vector **no compila** en `main` (ver §5). Lo más
+probable es que `pl-vector` no arranque y el panel quede vacío. Diagnóstico: `docker logs pl-vector`.
+
+### Opción 2 · Sistema completo
+
+```bash
+bash scripts/down.sh          # primero para lo anterior
+bash scripts/up.sh full
+```
+
+| Quieres probar… | Haz esto | Qué debería pasar |
+|---|---|---|
+| SSH falso | `ssh -p 2222 root@127.0.0.1` (contraseña `root`) | Entras en una «máquina» falsa; tus comandos quedan registrados |
+| Telnet falso | `telnet 127.0.0.1 2223` (admin / admin) | Igual que SSH |
+| FTP / MySQL / Redis | puertos 2121 / 3307 / 6380 | El servicio responde y anota la conexión |
+| Intranet web | <http://localhost:8080> | Ves una intranet corporativa; prueba `/login`, `/search?q=laura`, `/comment` |
+| Panel | <http://localhost:5601> | Tus pruebas aparecen como eventos clasificados al cabo de unos segundos |
+
+Para parar: `bash scripts/down.sh` (conserva los datos) o `bash scripts/down.sh --purge`
+(**borra** volúmenes, red y registros).
+
+### Probar sin Docker (lo que cualquier persona puede repetir)
+
+```bash
+python3 -m unittest discover -s tests          # pruebas de la raíz: 2 deben pasar
+cd modules/web-honeypot && pip install -r requirements-dev.txt && python -m pytest -q
+```
+
+La suite web debe terminar en `69 passed, 1 xfailed` con las PR de W02. El `xfailed` es una
+prueba que documenta a propósito una carencia conocida (ver §5).
+
+## 4. Qué funciona hoy y cómo verlo
+
+| Funcionalidad | Cómo verla | Estado |
+|---|---|---|
+| Señuelos SSH/Telnet/FTP/MySQL/Redis | Opción 2 y tabla de arriba | Código presente; **no verificado en Docker** en la última auditoría |
+| Intranet web falsa con 18 rutas (login, panel admin, buscador, `/ping`, subidas, ficheros «olvidados» como `/.env` o `/.git/config`) | <http://localhost:8080> o la suite web | Verificada por pruebas automáticas |
+| Registro de cada petición web como una línea JSON con identificador único | `docker exec hp-web tail /logs/web/web.jsonl` | Verificado por pruebas (W02) |
+| La IP del atacante se toma de la conexión real; cabeceras como `X-Forwarded-For` solo se aceptan si se activa `TRUST_PROXY` | Suite web | Verificado (W02) |
+| `/comment` muestra el comentario **escapado** (inofensivo) por defecto; `COMMENT_REFLECT_RAW=true` activa el fallo XSS de laboratorio | Envía `<script>alert(1)</script>` en <http://localhost:8080/comment> | Verificado (W02) |
+| Datos de ejemplo y panel con 19 objetos (gráficos, tablas, búsqueda guardada) | Opción 1 | El panel se regenera idéntico; los datos **no llegan** mientras Vector no compile |
+| Clasificación de ataques (SQLi, XSS, fuerza bruta…) con mapeo MITRE ATT&CK | Panel, campo `attack_type` | **Roto en `main`**: lo arregla W03 |
+
+## 5. Problemas conocidos del estado actual
+
+| Problema | Qué notarás | Se arregla en |
+|---|---|---|
+| Los scripts no tienen permiso de ejecución en Git | `./scripts/up.sh` da «Permission denied»; usa `bash scripts/up.sh` | W01 |
+| Faltan los ficheros `.env.example` que citan la guía y `setup.sh` | No hay plantilla de configuración que copiar | W01 |
+| La web publica el puerto 8080 en **todas** las interfaces de red | Otros equipos de tu red pueden ver la intranet falsa | W01 |
+| No hay comprobación previa (preflight) de puertos, dependencias, etc. | Los errores aparecen a mitad del arranque | W01 |
+| `down.sh` oculta los errores | Puede decir «Parado» aunque algo haya fallado | W01 |
+| El clasificador de Vector no compila | Panel vacío, CI en rojo | W03 |
+| No existe una lista de proxies autorizados (solo `TRUST_PROXY` sí/no) | Prueba `xfailed` en la suite web | Pendiente de decisión (diseño V2) |
+| El volumen de registros tiene permisos 0777 | Cualquier contenedor puede escribir los registros de otro | W04 |
+| CI en rojo desde la PR #6 | Marca roja en GitHub | W02 (pruebas web) + W03 (Vector) |
+
+## 6. Hacia dónde va
+
+El contrato completo está en [design.md](design.md). Resumen:
+
+| Etapa | Unidades | Qué aportará respecto a hoy |
+|---|---|---|
+| **Arranque fiable** | W01 | Un checkout limpio arranca con un comando, escucha solo en `localhost` por defecto, valida requisitos antes de empezar y `down.sh` informa de errores reales |
+| **Web y reglas** | W02 ✔ (en PR), W03 | Pruebas web en verde; clasificador que compila con casos positivos y negativos |
+| **Contención** | W04 | Cada servicio escribe solo en su sitio, con cuotas; un señuelo comprometido no contamina a los demás |
+| **Contabilidad** | W05 | Recuentos exactos de eventos por fuente: se sabe si se perdió algo |
+| **Entrega académica (TFM)** | W06 | Una segunda persona produce una interacción ficticia, la sigue hasta el panel y explica la clasificación y cualquier hueco |
+| **Piloto en red IT** | H01–H05 | Sensores con identidad propia, consola para el SOC, expedientes verificables offline, instalación y actualización firmadas, piloto con un cliente |
+| **Producto comercial** | Cierre H05 | Versión on-prem soportada que un cliente puede instalar, operar, actualizar y retirar |
+| **Opcionales** | H06, H07 | Analítica con ML y modalidades gestionada/híbrida/OT, cada una con su propia puerta de aprobación |
+
+## 7. Consejos para trabajar en el proyecto
+
+- **Qué es «verdad»:** el código y lo que se ha **ejecutado**. Si un documento dice que algo
+  funciona pero no hay prueba ejecutada, trátalo como «no verificado».
+- **Orden de autoridad:** `docs/design.md` → `docs/requisites.md` (V2) → resto de documentación.
+- **Cada cambio va en su propia rama y PR**; nadie sube directamente a `main`. CI
+  (`.github/workflows/quality.yml`) tiene que estar en verde antes de integrar.
+- **Cada pieza se prueba sola:** `modules/web-honeypot` (pytest), `modules/pipeline`
+  (`tests/run_vector_tests.sh`, `tests/e2e_check.sh`), `modules/ssh-honeypot` (`tests/smoke_ssh.sh`,
+  necesita `sshpass` y `jq`).
+- **Configuración:** cada módulo lee un `.env` propio (nunca se sube a Git). Variables de la web:
+  [guía del módulo web](modules/web-honeypot/guide.md).
+- **Sin Docker** puedes ejecutar las pruebas de la raíz, la suite web, `ruff` y las pruebas de
+  Vector con el binario 0.43.1. Lo que depende de contenedores (puertos, panel, ingestión)
+  necesita Docker.
+- **Nunca** pongas contraseñas, tokens o claves (p. ej. MaxMind) en ficheros del repositorio.
+- **`modules/ssh-honeypot/deploy/setup.sh` modifica SSH y el cortafuegos del servidor:** no lo ejecutes en una
+  máquina real sin autorización y un ensayo previo.
+
+## Mantener esta guía
+
+Actualiza esta guía al cerrar cada unidad W/H que cambie cómo se lanza el sistema, qué funciona
+(§4), los problemas conocidos (§5) o el avance (§6), y cambia la fecha del bloque de estado.
