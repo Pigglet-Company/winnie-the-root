@@ -32,7 +32,17 @@ check_os() {
   . /etc/os-release
   [[ "${ID:-}" == "ubuntu" && ( "${VERSION_ID:-}" == "22.04" || "${VERSION_ID:-}" == "24.04" ) ]] \
     || die "solo Ubuntu 22.04/24.04 (detectado: ${PRETTY_NAME:-desconocido})"
-  [[ -f "$MODULE_DIR/compose.yml" ]] || die "no encuentro $MODULE_DIR/compose.yml"
+}
+
+# Todo lo que prepare necesita del repositorio, comprobado ANTES de tocar paquetes, SSH o ufw.
+check_repo_files() {
+  local f
+  for f in "$MODULE_DIR/compose.yml" "$MODULE_DIR/scripts/egress-firewall.sh" \
+           "$SCRIPT_DIR/redirect-ports.sh" "$REPO_ROOT/scripts/init.sh" "$REPO_ROOT/scripts/lib/contract.sh"; do
+    [[ -f "$f" ]] || die "falta $f (checkout incompleto); no se ha cambiado nada"
+  done
+  [[ -f "$MODULE_DIR/.env" || -f "$MODULE_DIR/.env.example" ]] \
+    || die "falta $MODULE_DIR/.env.example; no se ha cambiado nada"
 }
 
 install_packages() {
@@ -118,9 +128,7 @@ configure_ufw() {
 }
 
 ensure_shared_resources() {
-  if docker network inspect honeynet >/dev/null 2>&1 && docker volume inspect honeylogs >/dev/null 2>&1; then
-    log "honeynet y honeylogs ya existen"; return
-  fi
+  # init.sh es idempotente: crea o verifica honeynet aislada y los volúmenes honeylogs-<fuente>.
   [[ -f "$REPO_ROOT/scripts/init.sh" ]] || die "falta $REPO_ROOT/scripts/init.sh (lo aporta la integración)"
   log "Ejecutando scripts/init.sh"
   bash "$REPO_ROOT/scripts/init.sh"
@@ -128,7 +136,13 @@ ensure_shared_resources() {
 
 start_honeypots() {
   log "Levantando honeypots"
-  [[ -f "$MODULE_DIR/.env" ]] || cp "$MODULE_DIR/.env.example" "$MODULE_DIR/.env"
+  if [[ ! -f "$MODULE_DIR/.env" ]]; then
+    cp "$MODULE_DIR/.env.example" "$MODULE_DIR/.env"
+    # En el VPS los señuelos deben escuchar en todas las interfaces (el ejemplo trae 127.0.0.1).
+    sed -i 's/^HP_BIND_ADDR=.*/HP_BIND_ADDR=0.0.0.0/' "$MODULE_DIR/.env"
+  fi
+  grep -q '^HP_BIND_ADDR=' "$MODULE_DIR/.env" || echo 'HP_BIND_ADDR=0.0.0.0' >> "$MODULE_DIR/.env"
+  log "Señuelos publicados en $(grep '^HP_BIND_ADDR=' "$MODULE_DIR/.env" | tail -1)"
   (cd "$MODULE_DIR" && docker compose up -d --build)
 }
 
@@ -140,9 +154,10 @@ install_firewall_service() {
   cat > /etc/systemd/system/honeypot-firewall.service <<EOF
 [Unit]
 Description=Honeypot: firewall de salida y redirecciones de puertos
-After=docker.service network-online.target
+# Antes de Docker: cuando Docker arranca los señuelos (restart: unless-stopped) la salida ya está cerrada.
+Before=docker.service
+After=network-online.target
 Wants=network-online.target
-Requires=docker.service
 
 [Service]
 Type=oneshot
@@ -162,10 +177,12 @@ EOF
 }
 
 install_log_pruning() {
-  # Cowrie rota a diario (cowrie.json.AAAA-MM-DD); se conservan 5 días
-  cat > /etc/cron.daily/honeypot-prune-logs <<'EOF'
+  # Las capturas son evidencia: manifiesto de integridad y plazo de 90 d con bloqueos por caso
+  # (scripts/evidence.py, docs/lab-containment.md). Cada borrado queda en var/evidence/deletions.ndjson.
+  cat > /etc/cron.daily/honeypot-prune-logs <<EOF
 #!/bin/sh
-find /var/lib/docker/volumes/honeylogs/_data/cowrie -name 'cowrie.json.*' -mtime +5 -delete
+python3 "$REPO_ROOT/scripts/evidence.py" manifest
+python3 "$REPO_ROOT/scripts/evidence.py" retention --apply
 EOF
   chmod 0755 /etc/cron.daily/honeypot-prune-logs
 }
@@ -216,6 +233,7 @@ cmd_prepare() {
   home="$(getent passwd "$ADMIN_USER" | cut -d: -f6)"
   keys="$home/.ssh/authorized_keys"
   [[ -s "$keys" ]] || die "$keys no existe o está vacío: se desactiva la contraseña, necesitas clave pública"
+  check_repo_files
 
   install_packages
   install_docker
@@ -223,8 +241,8 @@ cmd_prepare() {
   write_sshd_dropin 22 "$REAL_SSH_PORT"       # el 22 sigue abierto hasta 'finalize'
   configure_ufw
   ensure_shared_resources
+  install_firewall_service   # la política de salida va antes de que escuche ningún señuelo
   start_honeypots
-  install_firewall_service
   install_log_pruning
   (( WITH_WG )) && setup_wireguard
 

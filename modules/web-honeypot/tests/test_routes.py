@@ -5,6 +5,7 @@ import hashlib
 import json
 import stat
 import uuid
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -125,8 +126,45 @@ def test_command_injection_simulation_executes_nothing(hp: Honeypot, tmp_path: P
     assert "www-data" in hp.client.get("/ping", params={"host": "x && whoami || whoami"}).text
 
 
-def test_xss_is_reflected_only_to_requester_and_never_stored(hp: Honeypot) -> None:
-    payload = "<script>alert(1)</script>"
+class _ElementCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tags: list[str] = []
+        self.handlers: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.tags.append(tag)
+        self.handlers += [name for name, _ in attrs if name.startswith("on")]
+
+
+def _elements(page: str) -> _ElementCollector:
+    collector = _ElementCollector()
+    collector.feed(page)
+    return collector
+
+
+XSS_NAME, XSS_COMMENT = "<img src=x onerror=alert(2)>", "<script>alert(1)</script>"
+
+
+def test_comment_view_is_inert_by_default_and_attempt_is_logged(hp: Honeypot) -> None:
+    baseline = _elements(hp.client.get("/comment").text)
+    r = hp.client.post("/comment", data={"name": XSS_NAME, "comment": XSS_COMMENT})
+    dom = _elements(r.text)
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in r.text
+    assert dom.tags.count("script") == baseline.tags.count("script")
+    assert dom.tags.count("img") == baseline.tags.count("img") and dom.handlers == baseline.handlers
+    assert "%3Cscript%3Ealert%281%29" in hp.last()["http"]["body"]  # el intento sigue registrado
+
+
+def test_comment_raw_reflection_is_explicit_lab_opt_in(make_hp) -> None:  # type: ignore[no-untyped-def]
+    hp = make_hp(comment_reflect_raw=True)
+    r = hp.client.post("/comment", data={"name": XSS_NAME, "comment": XSS_COMMENT})
+    assert XSS_COMMENT in r.text and "onerror" in _elements(r.text).handlers
+
+
+def test_xss_is_reflected_only_to_requester_and_never_stored(make_hp) -> None:  # type: ignore[no-untyped-def]
+    hp = make_hp(comment_reflect_raw=True)
+    payload = XSS_COMMENT
     r = hp.client.post("/comment", data={"name": "mallory", "comment": payload})
     assert payload in r.text and r.headers["x-xss-protection"] == "0"
     again = hp.client.get("/comment")

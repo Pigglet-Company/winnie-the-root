@@ -16,6 +16,9 @@ permite explorarlos mediante gráficos, filtros y tablas.
 
 ## Contenido
 
+¿Primera vez? Empieza por la [visión general](docs/overview.md): qué es, cómo
+lanzarlo, qué funciona hoy y hacia dónde va.
+
 -   [Arquitectura](#arquitectura)
 -   [Tecnologías](#tecnologías)
 -   [Requisitos](#requisitos)
@@ -52,8 +55,9 @@ El proyecto se divide en tres módulos:
 ### Flujo de los datos:
 <img width="768" height="714" alt="image" src="https://github.com/user-attachments/assets/96146f8e-67eb-4db4-9c18-814af0e58df2" />
 
-Los honeypots escriben sus registros en el volumen compartido
-`honeylogs`. Vector lo monta en **solo lectura**, procesa los ficheros y
+Cada honeypot escribe sus registros en su propio volumen
+(`honeylogs-cowrie`, `honeylogs-opencanary`, `honeylogs-web`). Vector los
+monta en **solo lectura**, procesa los ficheros y
 envía los eventos a OpenSearch. Dashboards permite consultar los datos
 almacenados.
 
@@ -95,7 +99,10 @@ Desktop.
 
 ## Despliegue rápido
 
-Ejecuta los comandos desde la raíz del repositorio.
+Ejecuta los comandos desde la raíz del repositorio. El runbook
+completo está en [docs/RUN.md](docs/RUN.md). `./scripts/preflight.sh
+<synthetic|full>` comprueba requisitos y puertos sin cambiar nada;
+`up.sh` lo ejecuta antes de arrancar.
 
 ### Opción 1: probar el dashboard con datos de ejemplo
 
@@ -117,8 +124,7 @@ paneles aparecen vacíos.
 Para comprobar el recorrido de los datos:
 
 ``` bash
-cd modules/pipeline
-./tests/e2e_check.sh
+./modules/pipeline/tests/e2e_check.sh
 ```
 
 ### Opción 2: levantar el sistema completo
@@ -126,7 +132,7 @@ cd modules/pipeline
 Primero, si estabas utilizando el modo sintético, detenlo:
 
 ``` bash
-./scripts/down.sh
+./scripts/down.sh synthetic
 ```
 
 Después, desde la raíz del repositorio:
@@ -209,15 +215,11 @@ una base de datos MySQL ni un servidor Redis real.
 
 ### Dirección de enlace de los puertos
 
-Por defecto, los puertos SSH/Telnet/FTP/MySQL/Redis se enlazan a
-`127.0.0.1`. Para cambiar esa dirección, crea
-`modules/ssh-honeypot/.env` a partir de `.env.example` y configura
-`HP_BIND_ADDR`.
-
-**Atención:** el puerto web se publica mediante `8080:8080` sin
-restringir la dirección del host, por lo que Docker puede hacerlo
-accesible desde otras interfaces. Dashboards, en cambio, está enlazado
-explícitamente a `127.0.0.1:5601`.
+Por defecto, todos los puertos (SSH/Telnet/FTP/MySQL/Redis, web y
+Dashboards) se enlazan a `127.0.0.1`, también al lanzar un módulo por
+separado. Para abrir los señuelos a otras interfaces, crea el `.env`
+del módulo a partir de `.env.example` y configura `HP_BIND_ADDR`.
+Dashboards queda siempre en `127.0.0.1:5601`.
 
 No abras estos puertos a Internet sin revisar y adaptar antes las
 medidas de seguridad.
@@ -380,22 +382,22 @@ vacíos.
 
 ## Consultar los registros
 
-Los eventos originales se guardan en el volumen Docker `honeylogs`:
+Los eventos originales se guardan en un volumen Docker por fuente:
 
--   Cowrie: `/logs/cowrie/cowrie.json`
--   OpenCanary: `/logs/opencanary/opencanary.log`
--   Web: `/logs/web/web.jsonl`
+-   Cowrie: `honeylogs-cowrie`, fichero `cowrie.json`
+-   OpenCanary: `honeylogs-opencanary`, fichero `opencanary.log`
+-   Web: `honeylogs-web`, fichero `web.jsonl`
 
 Puedes consultar las últimas líneas sin entrar en los contenedores:
 
 ``` bash
-docker run --rm -v honeylogs:/logs:ro busybox tail -n 20 /logs/web/web.jsonl
+docker run --rm -v honeylogs-web:/logs/web:ro busybox tail -n 20 /logs/web/web.jsonl
 ```
 
 Para ver los eventos de Cowrie en tiempo real, si tienes `jq` instalado:
 
 ``` bash
-docker run --rm -v honeylogs:/logs:ro busybox tail -F /logs/cowrie/cowrie.json \
+docker run --rm -v honeylogs-cowrie:/logs/cowrie:ro busybox tail -F /logs/cowrie/cowrie.json \
   | jq -c '{time: .timestamp, event: .eventid, ip: .src_ip, user: .username, command: .input}'
 ```
 
@@ -430,11 +432,17 @@ Desde la raíz del repositorio:
 ./scripts/down.sh
 ```
 
+Para parar solo el pipeline: `./scripts/down.sh synthetic`. Si algo
+no se puede parar, `down.sh` muestra el error y sale con código 1.
+
 Para eliminar también los volúmenes, la red compartida y los logs:
 
 ``` bash
-./scripts/down.sh --purge
+./scripts/down.sh full --purge
 ```
+
+`--purge` solo borra la red y el volumen compartidos si llevan la
+etiqueta del proyecto que les pone `scripts/init.sh`.
 
 > `--purge` elimina datos persistentes. Utilízalo solo si estás seguro
 > de que no necesitas conservar los registros ni los índices.
@@ -447,8 +455,10 @@ Winee_de_Pou/
 ├── RUN.md
 ├── scripts/
 │   ├── init.sh
+│   ├── preflight.sh
 │   ├── up.sh
-│   └── down.sh
+│   ├── down.sh
+│   └── lib/contract.sh
 └── modules/
     ├── ssh-honeypot/
     │   ├── cowrie/
@@ -486,12 +496,12 @@ valores necesarios:
 No subas archivos `.env`, contraseñas ni claves de MaxMind al
 repositorio.
 
-Para habilitar GeoIP, configura `MAXMIND_LICENSE_KEY` en
-`modules/pipeline/.env` y ejecuta:
+Para habilitar GeoIP con DB-IP IP to City Lite (CC BY 4.0; cita «IP Geolocation by DB-IP» al mostrar
+los datos), ejecuta:
 
 ``` bash
 cd modules/pipeline
-./scripts/download_geolite.sh
+./scripts/download_geoip.sh      # con MAXMIND_LICENSE_KEY en .env usa MaxMind GeoLite2-City
 docker compose restart pl-vector
 ```
 
@@ -499,9 +509,14 @@ docker compose restart pl-vector
 
 -   Es un laboratorio y no debe considerarse una plataforma de
     producción lista para exponerse a Internet.
--   El volumen compartido `honeylogs` se prepara con permisos amplios
-    para facilitar las pruebas locales. Deben revisarse antes de un
-    despliegue real.
+-   Las cuotas de los volúmenes de logs se comprueban
+    (`scripts/volume_usage.sh`) pero no las impone el sistema de
+    ficheros; de momento es una decisión.
+-   TTY, comandos, contraseñas probadas, ficheros y payloads se guardan
+    a propósito como evidencia e IOC. `scripts/evidence.py` registra su
+    integridad y aplica 90 d con bloqueo por caso, pero las lecturas no
+    se auditan todavía. Detalle en
+    [docs/lab-containment.md](docs/lab-containment.md#capturas-como-evidencia).
 -   La configuración de desarrollo de OpenSearch/Dashboards no habilita
     autenticación.
 -   La configuración de producción requiere revisar y endurecer

@@ -1,13 +1,13 @@
 # Módulo A — SSH/Telnet honeypot (Cowrie + OpenCanary)
 
 Honeypots defensivos para el TFM. Registran intentos de login, comandos, descargas y sesiones
-en el volumen compartido `honeylogs`. **Todo es simulado**: nada de lo que escribe el atacante se ejecuta.
+en sus volúmenes `honeylogs-cowrie` y `honeylogs-opencanary` ([contención](../../docs/lab-containment.md)). **Todo es simulado**: nada de lo que escribe el atacante se ejecuta.
 
-| Servicio | Contenedor | Puerto host | Log (volumen `honeylogs`) |
+| Servicio | Contenedor | Puerto host | Log nativo |
 |---|---|---|---|
-| SSH (Cowrie) | `hp-cowrie` | 2222 | `/logs/cowrie/cowrie.json` (nativo) |
+| SSH (Cowrie) | `hp-cowrie` | 2222 | `honeylogs-cowrie`: `cowrie.json` |
 | Telnet (Cowrie) | `hp-cowrie` | 2223 | idem |
-| FTP (OpenCanary) | `hp-opencanary` | 2121 | `/logs/opencanary/opencanary.log` (nativo) |
+| FTP (OpenCanary) | `hp-opencanary` | 2121 | `honeylogs-opencanary`: `opencanary.log` |
 | MySQL (OpenCanary) | `hp-opencanary` | 3307 | idem |
 | Redis (OpenCanary) | `hp-opencanary` | 6380 | idem |
 
@@ -17,10 +17,10 @@ El firewall de salida solo funciona en **Linux** (iptables). En Docker Desktop (
 
 ## 2. Arranque (Fase 1, local)
 ```bash
-# Desde la raíz del repo (lo aporta integración). Alternativa manual idéntica:
-docker network create --subnet 172.30.0.0/24 honeynet
-docker volume create honeylogs
-docker run --rm -v honeylogs:/logs busybox sh -c "mkdir -p /logs/cowrie /logs/opencanary /logs/web && chmod -R 0777 /logs"
+# Desde la raíz del repo: red honeynet aislada y un volumen por fuente con su propietario.
+./scripts/init.sh
+# Con tráfico real, aplica antes la política de salida (root; en Linux):
+#   sudo modules/ssh-honeypot/scripts/egress-firewall.sh && ./scripts/check_egress.sh
 
 cd modules/ssh-honeypot
 cp .env.example .env
@@ -34,7 +34,7 @@ docker compose ps          # ambos "Up (healthy)" en ~40 s
 ./tests/smoke_ssh.sh
 
 # 3.2 Log en tiempo real
-docker run --rm -v honeylogs:/logs:ro busybox:1.36 tail -F /logs/cowrie/cowrie.json \
+docker run --rm -v honeylogs-cowrie:/logs/cowrie:ro busybox:1.36 tail -F /logs/cowrie/cowrie.json \
   | jq -c '{t: .timestamp, ev: .eventid, ip: .src_ip, user: .username, cmd: .input}'
 
 # 3.3 A mano
@@ -45,7 +45,7 @@ telnet 127.0.0.1 2223                                               # admin / ad
 printf 'USER admin\r\nPASS prueba\r\nQUIT\r\n' | nc -w3 127.0.0.1 2121
 printf '*2\r\n$4\r\nAUTH\r\n$6\r\nsecret\r\n' | nc -w2 127.0.0.1 6380
 mysql -h127.0.0.1 -P3307 -uroot -pprueba          # (si tienes cliente mysql)
-docker run --rm -v honeylogs:/logs:ro busybox:1.36 tail -n 5 /logs/opencanary/opencanary.log
+docker run --rm -v honeylogs-opencanary:/logs/opencanary:ro busybox:1.36 tail -n 5 /logs/opencanary/opencanary.log
 
 # 3.5 Comprobaciones de seguridad
 docker inspect hp-cowrie hp-opencanary --format '{{.Name}} user={{.Config.User}} ro={{.HostConfig.ReadonlyRootfs}} caps_drop={{.HostConfig.CapDrop}}'
@@ -61,7 +61,7 @@ docker inspect hp-cowrie --format '{{range .Mounts}}{{.Source}} {{end}}' | grep 
 - **`cowrie/userdb.txt`**: lista **cerrada** de credenciales débiles que dejan entrar (root/root, admin/admin, ...).
   Todo lo demás falla y genera `cowrie.login.failed` (material para fuerza bruta).
 - **`cowrie/honeyfs/etc/*`**: `hostname`, `issue` y `motd` coherentes con el resto de la huella.
-- **`opencanary/`**: imagen propia (no root, UID 10001) con solo FTP/MySQL/Redis activos;
+- **`opencanary/`**: imagen propia (no root, UID 10002) con solo FTP/MySQL/Redis activos;
   el resto de servicios están desactivados. Log con `RotatingFileHandler` de 50 MB × 5.
 - **`compose.yml`**: `cap_drop: ALL`, `no-new-privileges`, `read_only`, `pids_limit`, CPU/RAM limitadas,
   versiones fijas, solo red `honeynet`, **sin** `docker.sock`. IPs fijas `172.30.0.10` (Cowrie) y `.11` (OpenCanary).
@@ -90,7 +90,7 @@ Nota: las reglas se pierden al reiniciar; en el VPS las persiste el servicio `ho
 ## 6. Hardening aplicado (contrato §9)
 | Requisito | Implementación |
 |---|---|
-| Sin root | Cowrie: usuario de la imagen; OpenCanary: UID 10001 |
+| Sin root | Cowrie: usuario de la imagen; OpenCanary: UID 10002; cada uno solo escribe en su volumen |
 | `cap_drop: [ALL]`, `no-new-privileges` | `compose.yml` |
 | `read_only` | rootfs de solo lectura + `tmpfs` en `/tmp` |
 | Límites CPU/RAM | `cpus`, `mem_limit`, `pids_limit` (ajustables en `.env`) |

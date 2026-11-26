@@ -53,8 +53,13 @@ for f in '@timestamp' event_id honeypot service event_type src_ip; do
 done
 
 echo "4) MITRE coherente"
-N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must_not":[{"term":{"attack_type":"other"}},{"exists":{"field":"mitre_technique"}}]}}}' | num)
-[ "${N:-x}" = "0" ] && ok "todo attack_type != other tiene mitre_technique" || fail "${N:-?} eventos sin técnica MITRE"
+N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must_not":[{"terms":{"attack_type":["other","redis_command"]}},{"exists":{"field":"mitre_technique"}}]}}}' | num)
+[ "${N:-x}" = "0" ] && ok "todo attack_type con técnica (salvo other y redis_command) tiene mitre_technique" || fail "${N:-?} eventos sin técnica MITRE"
+N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must":[{"term":{"attack_type":"redis_command"}},{"exists":{"field":"mitre_technique"}}]}}}' | num)
+[ "${N:-x}" = "0" ] && ok "redis_command sin técnica MITRE" || fail "${N:-?} redis_command con técnica MITRE"
+
+N=$(os POST /honeypot-events/_count '{"query":{"bool":{"must_not":[{"exists":{"field":"rule.version"}}]}}}' | num)
+[ "${N:-x}" = "0" ] && ok "todos llevan rule.version" || fail "${N:-?} eventos sin rule.version"
 
 echo "5) event_id con formato UUID"
 N=$(os POST /honeypot-events/_count '{"query":{"regexp":{"event_id":"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"}}}' | num)
@@ -66,7 +71,7 @@ HPS=$(os POST /honeypot-events/_search '{"size":0,"aggs":{"t":{"terms":{"field":
 [ "$TYPES" -ge 6 ] && ok "${TYPES} attack_type distintos" || fail "solo ${TYPES} attack_type distintos"
 [ "$HPS" -ge 3 ] && ok "${HPS} honeypots distintos" || fail "solo ${HPS} honeypots"
 G=$(os POST /honeypot-events/_count '{"query":{"exists":{"field":"geo.location"}}}' | num)
-if [ "${G:-0}" -gt 0 ]; then ok "GeoIP activo (${G} eventos con geo.location)"; else echo "  [INFO] sin GeoIP (esperado si no hay MAXMIND_LICENSE_KEY)"; fi
+if [ "${G:-0}" -gt 0 ]; then ok "GeoIP activo (${G} eventos con geo.location)"; else echo "  [INFO] sin GeoIP (esperado si no se ejecutó scripts/download_geoip.sh)"; fi
 
 echo "7) Cola de errores (líneas corruptas: ${CORRUPT})"
 DL=$(docker exec pl-vector sh -c 'cat /var/lib/vector/dead_letter/*.jsonl 2>/dev/null | wc -l' 2>/dev/null | tr -d ' ')

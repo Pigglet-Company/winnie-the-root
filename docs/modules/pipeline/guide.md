@@ -2,7 +2,7 @@
 
 Los comandos que usan rutas relativas a este módulo se ejecutan desde `modules/pipeline/`, salvo donde se indique que el punto de partida es la raíz del repositorio. Consulta los [recursos compartidos](../../architecture.md#first-run).
 
-Lee los logs de los honeypots (volumen `honeylogs`, solo lectura), los **normaliza** al esquema común,
+Lee los logs de los honeypots (volúmenes `honeylogs-cowrie`, `honeylogs-opencanary` y `honeylogs-web`, solo lectura), los **normaliza** al esquema común,
 los **enriquece** (GeoIP opcional), los **clasifica** (`attack_type` + MITRE ATT&CK) y los indexa en
 OpenSearch (`honeypot-events-YYYY.MM.DD`, alias `honeypot-events`, retención 30 días). Incluye dashboards.
 
@@ -18,7 +18,7 @@ Los valores por defecto se declaran en Compose. Crea un `.env` local únicamente
 ## 1. Modo dev con datos sintéticos (sin módulos A y B)
 ```bash
 cd modules/pipeline
-docker volume create honeylogs                # volumen externo declarado por el modelo base
+./scripts/init.sh                             # volúmenes externos honeylogs-* del modelo base
 python3 tools/generate_sample_data.py          # ./sample-logs (≈6000 eventos, 7 días)
 docker compose -f compose.yml -f compose.dev.yml up -d
 ./scripts/import_dashboards.sh                 # espera a Dashboards e importa
@@ -26,13 +26,13 @@ docker compose -f compose.yml -f compose.dev.yml up -d
 ```
 Abre <http://localhost:5601/app/dashboards#/view/hp-dashboard> (rango de tiempo: últimos 30 días).
 
-## 2. Modo con logs reales (A y B escribiendo en `honeylogs`)
+## 2. Modo con logs reales (A y B escribiendo en sus volúmenes)
 ```bash
 # Prepara los recursos compartidos según la guía de arquitectura.
 cd modules/pipeline && docker compose up -d
 ./scripts/import_dashboards.sh
 ```
-Si Compose se queja de que `honeylogs` no existe: `docker volume create honeylogs`.
+Si Compose se queja de que falta un volumen `honeylogs-*`, ejecuta `./scripts/init.sh`.
 
 ## 3. Seguridad: dev / prod
 
@@ -43,8 +43,14 @@ define `OPENSEARCH_ADMIN_PASSWORD` y entra a Dashboards con `admin` (tenant **Gl
 `ssh -L 5601:127.0.0.1:5601 usuario@vps`. El heap se ajusta con `OPENSEARCH_HEAP` (por defecto `1g`).
 
 ## 4. GeoIP (opcional)
-Pon `MAXMIND_LICENSE_KEY` en `.env`, ejecuta `./scripts/download_geolite.sh` y
-`docker compose restart pl-vector`. Sin clave todo funciona, salvo mapa y países (paneles vacíos).
+`./scripts/download_geoip.sh` descarga **DB-IP IP to City Lite** (CC BY 4.0, sin cuenta) a `geoip/city.mmdb`;
+después, `docker compose restart pl-vector`. Si `.env` tiene `MAXMIND_LICENSE_KEY`, descarga en su lugar
+MaxMind GeoLite2-City (EULA de MaxMind: borrar versiones antiguas a los 30 días). Sin base todo funciona salvo
+mapa y países (paneles vacíos). GeoIP es un enriquecimiento opcional y no cambia la clasificación.
+
+**Atribución obligatoria (CC BY 4.0):** quien muestre o publique datos con GeoIP de DB-IP debe citar
+«IP Geolocation by [DB-IP](https://db-ip.com)». La base no se sube al repositorio (`geoip/*.mmdb` está ignorado).
+DB-IP publica una edición al mes: vuelve a ejecutar el script para actualizarla.
 
 ## 5. Dashboards
 `dashboards/honeypot.ndjson` se genera con `python3 tools/build_dashboards.py`. Contiene: eventos totales,

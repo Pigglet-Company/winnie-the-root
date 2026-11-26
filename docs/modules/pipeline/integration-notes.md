@@ -42,5 +42,6 @@ alguna función VRL o de la sintaxis de `extract_from: <transform>.dropped`, aju
 
 ## Dudas para integración
 - ¿Debe C crear `honeylogs` si no existe? Se asume que lo hace `scripts/init.sh`.
+  Resuelto en W04: un volumen por fuente; ver docs/lab-containment.md.
 - Host: `vm.max_map_count=262144` en Linux (`sudo sysctl -w vm.max_map_count=262144`).
 - Si A añade OpenCanary SSH/HTTP, ya están mapeados.

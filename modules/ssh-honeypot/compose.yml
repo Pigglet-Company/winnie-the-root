@@ -9,11 +9,17 @@ x-hardening: &hardening
     - no-new-privileges:true
   read_only: true
   pids_limit: 256
+  sysctls:                 # sin IPv6 dentro del contenedor (la red tampoco lo tiene)
+    net.ipv6.conf.all.disable_ipv6: 1
+  logging:                 # copia stdout/stderr de Docker: acotada (ver docs/lab-containment.md)
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
 
 services:
   hp-cowrie:
     <<: *hardening
-    image: cowrie/cowrie:v2.6.1            # versión fija (ver NOTAS_CONTRATO.md)
+    # Versión fija por digest. La etiqueta v2.6.1 que se usaba ya no existe en Docker Hub ni en GHCR.
+    image: cowrie/cowrie:2.9.0@sha256:d998e04e0a391431b516f1fb61fd5ef374754efc02c7bd1f4f7da0b22ab087b2
     container_name: hp-cowrie
     hostname: srv-prod-01
     cpus: ${COWRIE_CPUS:-1.0}
@@ -21,12 +27,12 @@ services:
     environment:
       TZ: UTC
     ports:
-      - "${HP_BIND_ADDR:-0.0.0.0}:2222:2222"   # SSH
-      - "${HP_BIND_ADDR:-0.0.0.0}:2223:2223"   # Telnet
+      - "${HP_BIND_ADDR:-127.0.0.1}:2222:2222"   # SSH
+      - "${HP_BIND_ADDR:-127.0.0.1}:2223:2223"   # Telnet
     tmpfs:
       - /tmp:size=16m,mode=1777
     volumes:
-      - honeylogs:/logs                                   # JSON compartido (A escribe, C lee)
+      - honeylogs-cowrie:/logs/cowrie                     # su JSON (UID 999 escribe, C lee en RO)
       - cowrie-data:/cowrie/cowrie-git/var                # TTY logs, descargas, claves de host, cowrie.log
       - ./cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
       - ./cowrie/userdb.txt:/cowrie/cowrie-git/etc/userdb.txt:ro
@@ -40,7 +46,7 @@ services:
         ipv4_address: 172.30.0.10                         # IP fija: la usan las redirecciones de producción
     healthcheck:
       # La imagen no trae shell: se usa el Python de la propia imagen
-      test: ["CMD", "/cowrie/cowrie-env/bin/python", "-c",
+      test: ["CMD", "/cowrie/cowrie-env/bin/python3", "-c",
              "import socket; socket.create_connection(('127.0.0.1', 2222), 2).close()"]
       interval: 30s
       timeout: 5s
@@ -59,14 +65,14 @@ services:
     environment:
       TZ: UTC
     ports:
-      - "${HP_BIND_ADDR:-0.0.0.0}:2121:2121"   # FTP
-      - "${HP_BIND_ADDR:-0.0.0.0}:3307:3306"   # MySQL
-      - "${HP_BIND_ADDR:-0.0.0.0}:6380:6379"   # Redis
+      - "${HP_BIND_ADDR:-127.0.0.1}:2121:2121"   # FTP
+      - "${HP_BIND_ADDR:-127.0.0.1}:3307:3306"   # MySQL
+      - "${HP_BIND_ADDR:-127.0.0.1}:6380:6379"   # Redis
     tmpfs:
       - /tmp:size=16m,mode=1777
-      - /home/canary:size=16m,uid=10001,gid=10001,mode=0750
+      - /home/canary:size=16m,uid=10002,gid=10002,mode=0750
     volumes:
-      - honeylogs:/logs
+      - honeylogs-opencanary:/logs/opencanary             # su log (UID 10002 escribe, C lee en RO)
       - ./opencanary/opencanary.conf:/etc/opencanaryd/opencanary.conf:ro
     networks:
       honeynet:
@@ -80,8 +86,10 @@ services:
       start_period: 20s
 
 volumes:
-  honeylogs:
+  honeylogs-cowrie:
     external: true      # lo crea scripts/init.sh
+  honeylogs-opencanary:
+    external: true
   cowrie-data:          # privado del módulo: TTY logs y malware descargado (nunca se sirve)
 
 networks:
