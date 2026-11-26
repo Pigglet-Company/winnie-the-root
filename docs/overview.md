@@ -136,7 +136,7 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 |---|---|---|
 | Comprobación previa: programas, `vm.max_map_count`, configuración efectiva y puertos ocupados, sin tocar nada | `./scripts/preflight.sh full` | Verificada sin Docker por pruebas (W01); con Docker real, en CI |
 | Parada que informa de errores y limpieza que solo borra recursos etiquetados del proyecto | `./scripts/down.sh synthetic` | Verificada sin Docker por pruebas (W01); con Docker real, en CI |
-| Señuelos SSH/Telnet/FTP/MySQL/Redis | Opción 2 y tabla de arriba | Código presente; **no verificado en Docker** en la última auditoría |
+| Señuelos SSH/Telnet/FTP/MySQL/Redis | Opción 2 y tabla de arriba | Arrancan y responden por SSH y FTP en CI con Docker (W04). Antes de W04, el FTP/MySQL/Redis falso (OpenCanary) no llegaba a arrancar. Telnet, MySQL y Redis no se prueban uno a uno |
 | Intranet web falsa con 18 rutas (login, panel admin, buscador, `/ping`, subidas, ficheros «olvidados» como `/.env` o `/.git/config`) | <http://localhost:8080> o la suite web | Verificada por pruebas automáticas |
 | Registro de cada petición web como una línea JSON con identificador único | `docker exec hp-web tail /logs/web/web.jsonl` | Verificado por pruebas (W02) |
 | La IP del atacante se toma de la conexión real; cabeceras como `X-Forwarded-For` solo se aceptan si se activa `TRUST_PROXY` | Suite web | Verificado (W02) |
