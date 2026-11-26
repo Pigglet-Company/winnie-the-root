@@ -5,7 +5,9 @@ arrancarlo, saber qué debería ver y qué falta todavía. Los detalles técnico
 [README.md](../README.md), [RUN.md](RUN.md) y las guías de cada módulo.
 
 > **Estado descrito:** `main` en `31216e9`, más las PR pendientes de W02 (fixture de pruebas web
-> y escape de `/comment`), W01 (arranque fiable) y W03 (reglas de clasificación y GeoIP con DB-IP). Actualizado el 25-11-2026.
+> y escape de `/comment`), W01 (arranque fiable), W03 (reglas de clasificación y GeoIP con DB-IP) y W04
+> (contención del laboratorio) y el cambio de diseño que trata las capturas como evidencia (PR #14).
+> Actualizado el 26-11-2026.
 > Si este bloque no coincide con el último trabajo cerrado, la guía está desactualizada.
 
 ## 1. Qué es Winnie, en una frase
@@ -68,7 +70,8 @@ y unos 4 GB de RAM libres. En Linux, antes de arrancar ejecuta una vez
 `sudo sysctl -w vm.max_map_count=262144` (OpenSearch lo exige).
 
 > **Aviso de seguridad:** es un laboratorio. No lo publiques en Internet. Los señuelos registran
-> contraseñas y otros datos que envían los visitantes: trátalos como datos sensibles.
+> contraseñas, comandos y ficheros del intruso a propósito: son pruebas del delito. Trátalos como datos
+> sensibles y no pruebes esas contraseñas en ningún sitio.
 
 Antes de arrancar puedes ejecutar `./scripts/preflight.sh synthetic` (o `full`): revisa programas,
 memoria de OpenSearch y puertos **sin cambiar nada** y dice qué falta. `up.sh` lo ejecuta por ti y
@@ -96,8 +99,16 @@ no compila y `pl-vector` no arranca.
 
 ```bash
 ./scripts/down.sh synthetic   # primero para lo anterior
+sudo modules/ssh-honeypot/scripts/egress-firewall.sh   # solo Linux; necesita permisos de administrador
 ./scripts/up.sh full
 ```
+
+El sistema completo recibe ataques de verdad, así que antes de arrancar los señuelos `up.sh` comprueba
+que no pueden **abrir conexiones hacia fuera**: ni a Internet, ni al ordenador que los aloja, ni entre
+ellos. Si pueden, se para y te dice qué hacer. La segunda línea instala esas reglas, que solo cortan
+lo que sale: los señuelos siguen respondiendo a quien se conecta. Si vienes de una versión anterior,
+`init.sh` te pedirá antes `./scripts/migrate_honeylogs.sh`, que copia los registros antiguos sin
+borrarlos ([detalle](lab-containment.md)).
 
 | Quieres probar… | Haz esto | Qué debería pasar |
 |---|---|---|
@@ -114,7 +125,7 @@ y termina con error.
 ### Probar sin Docker (lo que cualquier persona puede repetir)
 
 ```bash
-python3 -m unittest discover -s tests          # pruebas de la raíz: 16 deben pasar
+python3 -m unittest discover -s tests          # pruebas de la raíz: 36 deben pasar
 cd modules/web-honeypot && pip install -r requirements-dev.txt && python -m pytest -q
 ```
 
@@ -127,7 +138,7 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 |---|---|---|
 | Comprobación previa: programas, `vm.max_map_count`, configuración efectiva y puertos ocupados, sin tocar nada | `./scripts/preflight.sh full` | Verificada sin Docker por pruebas (W01); con Docker real, en CI |
 | Parada que informa de errores y limpieza que solo borra recursos etiquetados del proyecto | `./scripts/down.sh synthetic` | Verificada sin Docker por pruebas (W01); con Docker real, en CI |
-| Señuelos SSH/Telnet/FTP/MySQL/Redis | Opción 2 y tabla de arriba | Código presente; **no verificado en Docker** en la última auditoría |
+| Señuelos SSH/Telnet/FTP/MySQL/Redis | Opción 2 y tabla de arriba | Arrancan y responden por SSH y FTP en CI con Docker (W04). Antes de W04, el FTP/MySQL/Redis falso (OpenCanary) no llegaba a arrancar. Telnet, MySQL y Redis no se prueban uno a uno |
 | Intranet web falsa con 18 rutas (login, panel admin, buscador, `/ping`, subidas, ficheros «olvidados» como `/.env` o `/.git/config`) | <http://localhost:8080> o la suite web | Verificada por pruebas automáticas |
 | Registro de cada petición web como una línea JSON con identificador único | `docker exec hp-web tail /logs/web/web.jsonl` | Verificado por pruebas (W02) |
 | La IP del atacante se toma de la conexión real; cabeceras como `X-Forwarded-For` solo se aceptan si se activa `TRUST_PROXY` | Suite web | Verificado (W02) |
@@ -138,6 +149,9 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 | Las comprobaciones internas de salud de los señuelos ya no aparecen como «escaneos» | Panel: menos `recon_scan` en un sistema parado | Verificado por pruebas (W03) |
 | Mapa y países del atacante con la base gratuita DB-IP City Lite (hay que citar a DB-IP al mostrar los datos) | `modules/pipeline/scripts/download_geoip.sh` y reiniciar `pl-vector` | Verificado en local y en CI con Docker (W03); sin la base, el resto funciona igual |
 | Un comando Redis aparece como «comando Redis», sin técnica MITRE: el señuelo solo lo imita y no prueba que se ejecutara nada | Panel: tipo `redis_command` | Verificado por pruebas (W03) |
+| Cada señuelo guarda sus registros en su propio almacén; los demás no pueden leerlo, cambiarlo ni borrarlo, y Vector solo puede leer | `./scripts/volume_usage.sh` muestra cada almacén y su cuota | Verificado en CI con Docker y los usuarios reales de cada señuelo (W04) |
+| Las contraseñas, comandos, sesiones y ficheros del intruso se guardan como pruebas: cada fichero queda con su huella (hash), se detecta si alguien lo cambia, se borra a los 90 días salvo que un caso lo bloquee y cada borrado queda anotado | `./scripts/evidence.py manifest` y `./scripts/evidence.py retention` | Verificado en CI con Docker, incluida una alteración provocada (W04) |
+| Los señuelos no pueden abrir conexiones hacia Internet, hacia el ordenador que los aloja, hacia los metadatos de la nube ni entre ellos; si las reglas se instalan a medias, la salida queda cerrada | `./scripts/check_egress.sh` | Verificado en CI con Docker, incluido un fallo provocado a medias (W04). Es la prueba del laboratorio, no la de un sensor real (H02) |
 
 ## 5. Problemas conocidos del estado actual
 
@@ -145,7 +159,8 @@ prueba que documenta a propósito una carencia conocida (ver §5).
 |---|---|---|
 | El instalador del VPS (`deploy/setup.sh`) no se ha ensayado en una máquina real | Puede fallar o dejar SSH/firewall a medias; úsalo solo en una máquina desechable | Ensayo autorizado en máquina desechable (pendiente) |
 | No existe una lista de proxies autorizados (solo `TRUST_PROXY` sí/no) | Prueba `xfailed` en la suite web | Pendiente de decisión (diseño V2) |
-| El volumen de registros tiene permisos 0777 | Cualquier contenedor puede escribir los registros de otro | W04 |
+| Las pruebas guardadas aún no tienen control de lectura: quien administra Docker en el servidor puede leerlas todas, y su huella no está firmada | Nadie queda registrado al leer una prueba | Pendiente: la custodia firmada llega con H03 ([detalle](lab-containment.md#capturas-como-evidencia)) |
+| Las cuotas de espacio se anotan y se comprueban, pero el sistema no las impide | Un almacén puede pasarse de su cuota; `volume_usage.sh` lo avisa | Decidido así de momento; impedirlo exige preparar el disco del servidor como administrador |
 | CI en rojo desde la PR #6 | Marca roja en GitHub | Se corrige al integrar las PR de W02 y W03 |
 
 ## 6. Hacia dónde va
@@ -156,7 +171,7 @@ El contrato completo está en [design.md](design.md). Resumen:
 |---|---|---|
 | **Arranque fiable** | W01 ✔ (en PR) | Un checkout limpio arranca con un comando, escucha solo en `localhost` por defecto, valida requisitos antes de empezar y `down.sh` informa de errores reales |
 | **Web y reglas** | W02 ✔ (en PR), W03 ✔ (en PR) | Pruebas web en verde; clasificador que compila con casos positivos y negativos |
-| **Contención** | W04 | Cada servicio escribe solo en su sitio, con cuotas; un señuelo comprometido no contamina a los demás |
+| **Contención** | W04 ✔ (en PR) | Cada servicio escribe solo en su sitio, con cuotas; un señuelo comprometido no contamina a los demás |
 | **Contabilidad** | W05 | Recuentos exactos de eventos por fuente: se sabe si se perdió algo |
 | **Entrega académica (TFM)** | W06 | Una segunda persona produce una interacción ficticia, la sigue hasta el panel y explica la clasificación y cualquier hueco |
 | **Piloto en red IT** | H01–H05 | Sensores con identidad propia, consola para el SOC, expedientes verificables offline, instalación y actualización firmadas, piloto con un cliente |

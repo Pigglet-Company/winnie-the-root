@@ -22,8 +22,13 @@ services:
     tmpfs:
       - /tmp:size=64m,mode=1777,noexec,nosuid,nodev
     volumes:
-      - honeylogs:/logs                 # escribe /logs/web/web.jsonl
+      - honeylogs-web:/logs/web         # escribe web.jsonl (UID 10001; C lee en RO)
       - hp_web_uploads:/uploads         # volumen AISLADO: solo lo monta este contenedor
+    sysctls:
+      net.ipv6.conf.all.disable_ipv6: 1
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
     networks:
       - honeynet
 
@@ -32,7 +37,7 @@ networks:
     external: true
 
 volumes:
-  honeylogs:
+  honeylogs-web:
     external: true
   hp_web_uploads:
     name: hp-web-uploads

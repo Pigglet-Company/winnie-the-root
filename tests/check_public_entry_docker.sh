@@ -3,10 +3,12 @@
 #   1) docker compose config por cada modo: binds por defecto en 127.0.0.1 y 9200 sin publicar
 #   2) un preflight fallido (puerto ocupado) no cambia el estado de Docker: se registra antes y después
 #   3) init.sh dos veces seguidas: segunda ejecución sin errores y recursos etiquetados
-# No arranca contenedores de larga duración. Deja creados honeynet y honeylogs (los borra --cleanup).
+# No arranca contenedores de larga duración. Deja creados honeynet y honeylogs-<fuente> (los borra --cleanup).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=../scripts/lib/contract.sh
+. scripts/lib/contract.sh
 unset HP_BIND_ADDR WEB_HOST_PORT SECURITY_MODE
 
 published() {   # imprime host_ip:published de cada puerto publicado del modelo resuelto
@@ -53,7 +55,7 @@ kill "$holder"; trap - EXIT
 echo "== 3. init.sh dos veces"
 ./scripts/init.sh
 ./scripts/init.sh
-for kind in network:honeynet volume:honeylogs; do
+for kind in network:honeynet $(source_volume_names | sed 's/^/volume:/'); do
   docker "${kind%%:*}" inspect -f '{{json .Labels}}' "${kind#*:}" | grep -q '"io.winnie.project":"winnie-the-root"' \
     || { echo "ERROR: ${kind#*:} sin etiqueta del proyecto"; exit 1; }
 done

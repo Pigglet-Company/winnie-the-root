@@ -1,6 +1,6 @@
 # Módulo C — Pipeline (Vector + OpenSearch + Dashboards)
 
-Lee los logs de los honeypots (volumen `honeylogs`, solo lectura), los **normaliza** al esquema común,
+Lee los logs de los honeypots (volúmenes `honeylogs-cowrie`, `honeylogs-opencanary` y `honeylogs-web`, solo lectura), los **normaliza** al esquema común,
 los **enriquece** (GeoIP opcional), los **clasifica** (`attack_type` + MITRE ATT&CK) y los indexa en
 OpenSearch (`honeypot-events-YYYY.MM.DD`, alias `honeypot-events`, retención 30 días). Incluye dashboards.
 
@@ -24,13 +24,13 @@ docker compose -f compose.yml -f compose.dev.yml up -d
 ```
 Abre <http://localhost:5601/app/dashboards#/view/hp-dashboard> (rango de tiempo: últimos 30 días).
 
-## 2. Modo con logs reales (A y B escribiendo en `honeylogs`)
+## 2. Modo con logs reales (A y B escribiendo en sus volúmenes)
 ```bash
-./scripts/init.sh            # en la raíz del repo (crea honeynet y honeylogs)
+./scripts/init.sh            # en la raíz del repo (crea honeynet y los volúmenes honeylogs-*)
 cd modules/pipeline && docker compose up -d
 ./scripts/import_dashboards.sh
 ```
-Si Compose se queja de que `honeylogs` no existe: `docker volume create honeylogs`.
+Si Compose se queja de que falta un volumen `honeylogs-*`, ejecuta `./scripts/init.sh`.
 
 ## 3. Seguridad: dev / prod
 `SECURITY_MODE` en `.env`: `dev` (sin autenticación) o `prod` (autenticación + TLS interno). En prod,

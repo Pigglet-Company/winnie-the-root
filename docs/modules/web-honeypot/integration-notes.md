@@ -34,5 +34,6 @@ Notas históricas de entrega. Para el estado actual y los bloqueos de integraci�
 - ¿Prefiere C leer `src_port: null` (con proxy) o un valor 0? Se deja `null`.
 - `X-Forwarded-For` toma la ÚLTIMA entrada (un solo proxy de confianza). Si habrá cadena de proxies, hay que ajustarlo.
 - El volumen `honeylogs` con `0777` (solo desarrollo): el contenedor escribe como UID 10001; al endurecer, `chown 10001` en `/logs/web`.
+  Resuelto en W04: un volumen por fuente; ver docs/lab-containment.md.
 - Las reglas de C deberían contemplar `User-Agent` de herramientas y payloads con doble codificación (`%252e`).
 - `COMMENT_CSP` vacío deja el XSS reflejado ejecutable en el navegador del atacante (intencionado); pon una CSP si prefieres neutralizarlo.

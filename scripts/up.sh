@@ -18,6 +18,21 @@ profile_modules "$MODE" >/dev/null 2>&1 || usage 1
 bash "$ROOT/scripts/preflight.sh" "$MODE"
 bash "$ROOT/scripts/init.sh"
 
+# Los señuelos solo arrancan con la salida de la honeynet ya cerrada (docs/lab-containment.md).
+# WINNIE_ALLOW_EGRESS=1 lo salta solo si todos los señuelos escuchan en 127.0.0.1.
+if [ "$MODE" = "full" ] && ! bash "$ROOT/scripts/check_egress.sh"; then
+  loopback=1
+  while read -r _ addr _ _; do case "$addr" in 127.*) ;; *) loopback=0 ;; esac; done \
+    < <(published_ports full | grep -v '^pipeline ')
+  if [ "${WINNIE_ALLOW_EGRESS:-0}" = 1 ] && [ "$loopback" = 1 ]; then
+    echo "[up] AVISO: WINNIE_ALLOW_EGRESS=1 con señuelos en 127.0.0.1: arranco SIN contención de salida." \
+         "No uses este modo con participantes ni tráfico externo."
+  else
+    echo "[up] No arranco los señuelos sin contención de salida." >&2
+    exit 1
+  fi
+fi
+
 # Los puertos de los señuelos escuchan en 127.0.0.1 salvo que el .env del módulo diga otra cosa.
 if [ "$MODE" = "synthetic" ]; then
   (cd "$ROOT/modules/pipeline" && python3 tools/generate_sample_data.py)
