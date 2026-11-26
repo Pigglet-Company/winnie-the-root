@@ -151,6 +151,8 @@ ok "la red no da direcciones IPv6 globales"
 docker rm -f w04-peer >/dev/null
 
 echo "== 4. Señuelos reales"
+declare -A base seen
+for s in cowrie opencanary web; do base[$s]="$(in_vol "$(vol "$s")" sh -c "cat /v/$(file_of "$s")* 2>/dev/null | wc -l" | tr -d ' ')"; done
 (cd modules/ssh-honeypot && docker compose up -d --build --quiet-pull) >/dev/null
 (cd modules/web-honeypot && docker compose up -d --build --quiet-pull) >/dev/null
 wait_healthy() {
@@ -168,7 +170,9 @@ traffic() {   # respuestas por los puertos publicados (y eventos para los logs)
   [ "$banner" = "220" ] || fail "sin respuesta FTP por 127.0.0.1:2121 ($banner)"
   [ "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:8080/?w04=$1")" = 200 ] || fail "sin respuesta web por 127.0.0.1:8080"
 }
-lines() { in_vol "$(vol "$1")" sh -c "cat /v/$(file_of "$1") 2>/dev/null | wc -l" | tr -d ' '; }
+# Contenido del log nativo y sus rotaciones (cowrie.json, cowrie.json.AAAA-MM-DD, opencanary.log.1…).
+content() { in_vol "$(vol "$1")" sh -c "cat /v/$(file_of "$1")* 2>/dev/null"; }
+lines() { content "$1" | wc -l | tr -d ' '; }
 wait_lines() {   # $1=fuente $2=mínimo
   for _ in $(seq 30); do [ "$(lines "$1")" -ge "$2" ] && return 0; sleep 2; done
   fail "$(vol "$1"): menos de $2 líneas en $(file_of "$1")"
@@ -176,9 +180,8 @@ wait_lines() {   # $1=fuente $2=mínimo
 wait_healthy
 traffic 1
 ok "respuestas por SSH 2222, FTP 2121 y web 8080 con la salida cerrada"
-declare -A seen
 for s in cowrie opencanary web; do
-  wait_lines "$s" 2   # la línea migrada + al menos una nueva
+  wait_lines "$s" $(( base[$s] + 1 ))   # lo migrado + al menos una línea nueva
   seen[$s]="$(lines "$s")"
   owner="$(in_vol "$(vol $s)" sh -c "ls -n /v | awk 'NR>1 {print \$3}' | sort -u | tr '\n' ' '")"
   [ "$owner" = "$(uid $s) " ] || fail "$(vol $s): ficheros con propietarios '$owner', esperado $(uid $s)"
@@ -216,7 +219,7 @@ for s in cowrie opencanary web; do
 done
 ok "colector 1000:$READER_GID: lee las tres fuentes; no escribe ni borra (ni sin montaje RO)"
 
-first="$(in_vol "$(vol cowrie)" head -1 /v/cowrie.json)"
+for s in cowrie opencanary web; do content "$s" | sort > "$T/before.$s"; done
 (cd modules/ssh-honeypot && docker compose restart) >/dev/null
 (cd modules/web-honeypot && docker compose restart) >/dev/null
 wait_healthy
@@ -225,7 +228,11 @@ for s in cowrie opencanary web; do
   wait_lines "$s" $(( seen[$s] + 1 ))
   ok "$s tras reinicio: $(lines "$s") líneas (antes ${seen[$s]}), datos previos conservados"
 done
-[ "$(in_vol "$(vol cowrie)" head -1 /v/cowrie.json)" = "$first" ] || fail "la primera línea de cowrie.json cambió tras el reinicio"
+for s in cowrie opencanary web; do
+  content "$s" | sort > "$T/after.$s"
+  [ -z "$(comm -23 "$T/before.$s" "$T/after.$s")" ] || fail "$(vol "$s"): faltan líneas anteriores al reinicio"
+done
+ok "todas las líneas anteriores al reinicio siguen en los logs nativos o sus rotaciones"
 ./scripts/volume_usage.sh
 
 echo "== 5. Retirada de reglas y limpieza"
