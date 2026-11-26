@@ -2,7 +2,7 @@
 
 Cómo se separan los productores de logs, qué copias de datos existen, qué tráfico puede salir de la
 honeynet y cómo se migra desde la disposición anterior. Cubre SEC-CONT-001 y PRIV-MIN-001 para el
-**laboratorio** (W04). La contención exterior de un sensor (ACL de red, vNIC, revocación, H02) no está
+**laboratorio** (W04), incluida la gestión de las capturas como evidencia. La contención exterior de un sensor (ACL de red, vNIC, revocación, H02) no está
 aquí. Esta prueba no la demuestra.
 
 ## Volúmenes y UIDs
@@ -28,7 +28,7 @@ La fuente única de verdad es `SOURCE_VOLUMES` en `scripts/lib/contract.sh`.
 
 ### Cuotas
 
-Las cuotas se **comprueban**, no las impone el sistema de ficheros: `./scripts/volume_usage.sh` sale con
+Por decisión, de momento las cuotas quedan **registradas y comprobadas**, sin imponer: `./scripts/volume_usage.sh` sale con
 1 si un volumen supera la suya. Una cuota dura (por ejemplo, `pquota` de XFS por volumen) necesita root
 en el host y un sistema de ficheros preparado, así que queda fuera del laboratorio. Los límites que sí
 se imponen son estos:
@@ -45,30 +45,55 @@ se imponen son estos:
 
 | Copia | Dónde | Para qué | Quién accede | Retención |
 |---|---|---|---|---|
-| JSON nativo de Cowrie y rotaciones diarias | `honeylogs-cowrie` (`cowrie.json*`) | fuente del pipeline | Cowrie escribe, Vector lee | poda por cron en el VPS (`deploy/setup.sh`); en el laboratorio, hasta `down.sh --purge` |
-| Log nativo de OpenCanary y rotaciones | `honeylogs-opencanary` (`opencanary.log*`) | fuente del pipeline | OpenCanary escribe, Vector lee | 5 rotaciones |
-| Log nativo de la web y rotaciones | `honeylogs-web` (`web.jsonl*`) | fuente del pipeline | web escribe, Vector lee | 5 rotaciones |
-| stdout de OpenCanary (duplica los eventos) | log `json-file` de Docker | diagnóstico | quien pueda usar `docker logs` | 10 MB × 3 |
-| stdout del resto de contenedores | log `json-file` de Docker | diagnóstico | quien pueda usar `docker logs` | 10 MB × 3 |
-| TTY de Cowrie, descargas, `cowrie.log`, claves de host | `cowrie-data`, privado del módulo | reconstrucción y análisis | solo Cowrie; nunca se sirve | hasta `down.sh --purge` |
-| Subidas a la web | volumen de subidas de la web | señuelo de subida | solo la web | límite de tamaño y número |
+| JSON nativo de Cowrie y rotaciones diarias | `honeylogs-cowrie` (`cowrie.json*`) | fuente del pipeline y evidencia | Cowrie escribe, Vector lee | 90 d con bloqueo por caso |
+| Log nativo de OpenCanary y rotaciones | `honeylogs-opencanary` (`opencanary.log*`) | fuente del pipeline y evidencia | OpenCanary escribe, Vector lee | 90 d, pero solo 5 rotaciones de 50 MB |
+| Log nativo de la web y rotaciones | `honeylogs-web` (`web.jsonl*`) | fuente del pipeline y evidencia | web escribe, Vector lee | 90 d, pero solo 5 rotaciones de 50 MB |
+| stdout de los contenedores (sin eventos de OpenCanary) | log `json-file` de Docker | diagnóstico | quien pueda usar `docker logs` | 10 MB × 3 |
+| TTY de Cowrie, descargas y `cowrie.log` | `cowrie-data`, privado del módulo | evidencia: sesión, comandos, malware | solo Cowrie; nunca se sirve | 90 d con bloqueo por caso |
+| Claves de host de Cowrie | `cowrie-data` | identidad estable del señuelo | solo Cowrie | hasta `down.sh --purge` |
+| Subidas a la web | `web-honeypot_hp_web_uploads` | evidencia: ficheros del intruso | solo la web | 90 d con bloqueo por caso; tope de tamaño y número |
+| Manifiestos, bloqueos y registro de borrados | `var/evidence/` (fuera de git) | integridad y rendición de cuentas | quien administra el host | sin plazo; solo hashes y rutas |
 | Muestras **sintéticas** | `modules/pipeline/sample-logs/` (perfil sintético) | pruebas y demo | repositorio | versionadas, sin datos reales |
 
 El modo **full** captura tráfico real. El modo **sintético** solo lee las muestras del repositorio:
 `init.sh` crea los volúmenes `honeylogs-*` vacíos, pero el pipeline no los monta (`compose.dev.yml`).
 
-### Diferencia con la tabla de privacidad
+### Capturas como evidencia
 
-La tabla de privacidad de `docs/design.md` dice que comandos, input, TTY, ficheros y payloads están
-**desactivados**, y que las contraseñas no persisten. La configuración actual de Cowrie no lo cumple:
+Las contraseñas probadas, los comandos y TTY, los ficheros y los payloads se producen en equipos propios
+por un acceso no autorizado. Son la prueba del intento y la fuente de IOC, así que el modo full los
+captura (`docs/design.md` §10, «Gestión de las capturas de evidencia»). Cowrie mantiene `ttylog`,
+sftp/exec y la contraseña de cada login.
 
-- `ttylog = true`.
-- `sftp_enabled` y `exec_enabled` están activos.
-- Los eventos de login guardan la contraseña probada.
-- OpenCanary duplica sus eventos en stdout.
+Aplicado en el laboratorio:
 
-W04 no cambia la captura: separa y limita las copias. Ajustar la captura a la tabla es una decisión
-pendiente.
+- **Integridad.** `./scripts/evidence.py manifest` guarda el sha256, el tamaño, la fecha y el modo de
+  cada captura en `var/evidence/manifest-<fecha>.json`, encadenado al manifiesto anterior. Sale con 1
+  en estos casos:
+  - Una captura cerrada cambia.
+  - Una captura desaparece sin borrado registrado.
+  - Un TTY o una descarga no coincide con el sha256 de su nombre.
+  - Una captura tiene permiso de ejecución.
+  Un log vivo puede crecer. Una rotación numerada se sigue por su contenido.
+- **Plazo.** `./scripts/evidence.py retention` lista lo que tiene más de 90 d (`EVIDENCE_TTL_DAYS`), sin
+  borrar. `--apply` lo borra y anota cada fichero con su hash en `var/evidence/deletions.ndjson`.
+  Nunca borra un log vivo ni un TTY abierto. En el VPS, `deploy/setup.sh` instala ambas órdenes en el
+  cron diario, en lugar de la poda anterior de 5 días.
+- **Bloqueo por caso.** Cada línea de `var/evidence/holds.txt` (`<almacén> <patrón>  # motivo`)
+  conserva lo que coincide, aunque haya caducado.
+- **Una copia menos.** OpenCanary ya no duplica sus eventos, con las contraseñas, en el stdout de Docker.
+- **Contenido inerte.** Ningún componente ejecuta ni sirve lo capturado. Las subidas se guardan con
+  `0640` y nombre aleatorio; las descargas de Cowrie con el sha256 por nombre. El manifiesto avisa si
+  algo tiene permiso de ejecución.
+
+Pendiente, sin unidad asignada en este documento:
+
+- Las lecturas no se auditan: quien usa Docker en el host lo lee todo.
+- El manifiesto no está firmado; la custodia firmada y el almacén de evidencia separado son de H03.
+- `cowrie.log` (texto) repite las contraseñas en `cowrie-data`. Figura en el inventario y tiene el
+  mismo plazo.
+- OpenCanary y la web rotan 5 × 50 MB. Con mucho tráfico, lo más antiguo se pierde antes de 90 d: el
+  manifiesto lo anota como «rotated out by the producer».
 
 ### Identidades ficticias
 
@@ -140,7 +165,7 @@ los volúmenes nuevos. `down.sh --purge` nunca borra el legado: bórralo a mano
 ## Verificación
 
 - `python3 -m unittest discover -s tests`: montajes por fuente, ausencia de `0777`, UIDs distintos,
-  límites de logs de Docker e identidades ficticias.
+  límites de logs de Docker e identidades ficticias; reglas de integridad y plazo de `scripts/evidence.py`.
 - `tests/check_isolation_docker.sh`, solo en un host desechable (CI, `WINNIE_DISPOSABLE_HOST=1`):
   - Migración, con el legado sin cambios y una segunda migración rechazada.
   - `init.sh` repetido sin reabrir permisos.
@@ -151,6 +176,8 @@ los volúmenes nuevos. `down.sh --purge` nunca borra el legado: bórralo a mano
   - Escritura propia y denegación cruzada con los UIDs reales.
   - Lectura del colector.
   - Persistencia tras reinicio.
+  - Capturas: alteración detectada, bloqueo por caso, simulación y borrado registrado, log vivo
+    conservado, OpenCanary sin eventos en stdout.
   - Retirada de reglas.
 
   Nunca lo lances en un VPS real.

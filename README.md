@@ -511,9 +511,12 @@ docker compose restart pl-vector
     producción lista para exponerse a Internet.
 -   Las cuotas de los volúmenes de logs se comprueban
     (`scripts/volume_usage.sh`) pero no las impone el sistema de
-    ficheros. Cowrie sigue guardando TTY, comandos y contraseñas
-    probadas, por encima de lo que fija la tabla de privacidad. Detalle
-    en [docs/lab-containment.md](docs/lab-containment.md).
+    ficheros; de momento es una decisión.
+-   TTY, comandos, contraseñas probadas, ficheros y payloads se guardan
+    a propósito como evidencia e IOC. `scripts/evidence.py` registra su
+    integridad y aplica 90 d con bloqueo por caso, pero las lecturas no
+    se auditan todavía. Detalle en
+    [docs/lab-containment.md](docs/lab-containment.md#capturas-como-evidencia).
 -   La configuración de desarrollo de OpenSearch/Dashboards no habilita
     autenticación.
 -   La configuración de producción requiere revisar y endurecer

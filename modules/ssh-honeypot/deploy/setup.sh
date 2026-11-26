@@ -177,10 +177,12 @@ EOF
 }
 
 install_log_pruning() {
-  # Cowrie rota a diario (cowrie.json.AAAA-MM-DD); se conservan 5 días
-  cat > /etc/cron.daily/honeypot-prune-logs <<'EOF'
+  # Las capturas son evidencia: manifiesto de integridad y plazo de 90 d con bloqueos por caso
+  # (scripts/evidence.py, docs/lab-containment.md). Cada borrado queda en var/evidence/deletions.ndjson.
+  cat > /etc/cron.daily/honeypot-prune-logs <<EOF
 #!/bin/sh
-find /var/lib/docker/volumes/honeylogs-cowrie/_data -name 'cowrie.json.*' -mtime +5 -delete
+python3 "$REPO_ROOT/scripts/evidence.py" manifest
+python3 "$REPO_ROOT/scripts/evidence.py" retention --apply
 EOF
   chmod 0755 /etc/cron.daily/honeypot-prune-logs
 }

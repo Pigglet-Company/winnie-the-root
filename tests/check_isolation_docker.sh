@@ -8,6 +8,7 @@
 #      metadatos, host y pares; IPv6 ausente
 #   4) señuelos reales: respuesta por los puertos publicados, escritura propia con su UID,
 #      denegación cruzada de lectura/escritura/borrado, lectura del colector, reinicio
+#   4b) capturas como evidencia: manifiesto, alteración detectada, bloqueo por caso, retención
 #   5) retirada de reglas y limpieza
 # Esto es la contención del LABORATORIO (W04). La contención exterior de un sensor (ACL, vNIC,
 # revocación) es H02 y no se prueba aquí.
@@ -234,6 +235,31 @@ for s in cowrie opencanary web; do
 done
 ok "todas las líneas anteriores al reinicio siguen en los logs nativos o sus rotaciones"
 ./scripts/volume_usage.sh
+
+echo "== 4b. Capturas como evidencia: manifiesto, alteración, bloqueo y retención"
+export EVIDENCE_DIR="$T/evidence"
+ROT=cowrie.json.2026-11-01   # rotación cerrada que trajo la migración
+python3 scripts/evidence.py manifest >/dev/null || fail "el primer manifiesto tiene incidencias"
+docker run --rm --network none -v "$(vol cowrie):/v" "$BB" sh -c "echo alterado >> /v/$ROT"
+if python3 scripts/evidence.py manifest 2>"$T/ev.err" >/dev/null; then fail "no detecta la alteración de $ROT"; fi
+grep -q "cowrie:$ROT: closed capture changed" "$T/ev.err" || fail "incidencia inesperada: $(cat "$T/ev.err")"
+ok "una rotación cerrada alterada abre incidencia"
+docker run --rm --network none -v "$(vol cowrie):/v" "$BB" touch -d "2026-01-01 00:00:00" "/v/$ROT"
+echo "cowrie cowrie.json.2026-11-*   # caso de prueba" > "$EVIDENCE_DIR/holds.txt"
+python3 scripts/evidence.py retention --apply | grep -q "cowrie:$ROT" && fail "borra una captura bloqueada"
+in_vol "$(vol cowrie)" test -f "/v/$ROT" || fail "falta $ROT pese al bloqueo"
+ok "el bloqueo por caso conserva una captura caducada"
+rm "$EVIDENCE_DIR/holds.txt"
+python3 scripts/evidence.py retention | grep -q "caducado cowrie:$ROT" || fail "la simulación no lista $ROT"
+in_vol "$(vol cowrie)" test -f "/v/$ROT" || fail "la simulación borró $ROT"
+python3 scripts/evidence.py retention --apply >/dev/null
+if in_vol "$(vol cowrie)" test -f "/v/$ROT"; then fail "--apply no borró $ROT"; fi
+grep -q "\"path\": \"$ROT\"" "$EVIDENCE_DIR/deletions.ndjson" || fail "borrado sin registrar"
+in_vol "$(vol cowrie)" test -f /v/cowrie.json || fail "la retención borró el log vivo"
+python3 scripts/evidence.py manifest >/dev/null || fail "un borrado registrado cuenta como pérdida"
+ok "90 d: simulación sin borrar, --apply borra y registra; el log vivo se conserva"
+if docker logs hp-opencanary 2>&1 | grep -q '"logtype"'; then fail "OpenCanary copia eventos en stdout"; fi
+ok "OpenCanary no duplica eventos (ni contraseñas) en stdout"
 
 echo "== 5. Retirada de reglas y limpieza"
 for m in web-honeypot ssh-honeypot; do (cd "modules/$m" && docker compose down) >/dev/null 2>&1; done
