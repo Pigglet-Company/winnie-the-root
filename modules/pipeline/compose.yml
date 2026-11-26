@@ -1,6 +1,6 @@
 # =============================================================================
 # Módulo C - pipeline (Vector + OpenSearch + OpenSearch Dashboards)
-# Requisito previo: scripts/init.sh (crea el volumen externo "honeylogs").
+# Requisito previo: scripts/init.sh (crea los volúmenes externos honeylogs-<fuente>).
 # Modo seguridad:   SECURITY_MODE=dev|prod en .env (ver .env.example)
 # Datos sintéticos: docker compose -f compose.yml -f compose.dev.yml up -d
 # =============================================================================
@@ -84,7 +84,7 @@ services:
     <<: *hardening
     image: timberio/vector:0.43.1-debian
     container_name: pl-vector
-    user: "1000:1000"
+    user: "1000:1000"             # READER_GID de scripts/lib/contract.sh
     entrypoint: ["/bin/sh", "/etc/vector/entrypoint.sh"]
     env_file:
       - ./env/vector.${SECURITY_MODE:-dev}.env
@@ -93,7 +93,9 @@ services:
       - OPENSEARCH_USER=admin
       - OPENSEARCH_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-}
     volumes:
-      - honeylogs:/logs:ro            # logs de los honeypots, SOLO LECTURA
+      - honeylogs-cowrie:/logs/cowrie:ro           # logs de cada productor, SOLO LECTURA
+      - honeylogs-opencanary:/logs/opencanary:ro
+      - honeylogs-web:/logs/web:ro
       - ./vector:/etc/vector:ro
       - ./geoip:/geoip:ro
       - vector-data:/var/lib/vector   # checkpoints, buffer en disco y cola de errores
@@ -134,7 +136,11 @@ networks:
   pl-frontend:        # solo para publicar Dashboards en 127.0.0.1:5601
 
 volumes:
-  honeylogs:
-    external: true    # lo crea scripts/init.sh; este módulo lo monta en solo lectura
+  honeylogs-cowrie:
+    external: true    # los crea scripts/init.sh; este módulo los monta en solo lectura
+  honeylogs-opencanary:
+    external: true
+  honeylogs-web:
+    external: true
   vector-data:
   os-data:

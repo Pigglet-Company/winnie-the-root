@@ -1,7 +1,9 @@
-# Override para trabajar SIN módulos A y B: monta ./sample-logs como /logs.
+# Override para trabajar SIN módulos A y B: monta ./sample-logs en el lugar de cada volumen.
 #   python3 tools/generate_sample_data.py
 #   docker compose -f compose.yml -f compose.dev.yml up -d
 services:
   pl-vector:
     volumes:
-      - ./sample-logs:/logs:ro
+      - ./sample-logs/cowrie:/logs/cowrie:ro
+      - ./sample-logs/opencanary:/logs/opencanary:ro
+      - ./sample-logs/web:/logs/web:ro

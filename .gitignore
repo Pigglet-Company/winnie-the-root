@@ -6,3 +6,4 @@ __pycache__/
 .env
 modules/pipeline/sample-logs/
 modules/pipeline/geoip/*.mmdb
+var/

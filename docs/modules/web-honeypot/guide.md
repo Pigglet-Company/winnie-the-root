@@ -23,7 +23,7 @@ modules/web-honeypot/
 ## Arranque (local, red aislada)
 
 ```bash
-# 1) Una sola vez, desde la raíz del repo (crea red "honeynet" y volumen "honeylogs")
+# 1) Una sola vez, desde la raíz del repo (crea la red "honeynet" y los volúmenes "honeylogs-*")
 # Prepara los recursos compartidos según la guía de arquitectura.
 
 # 2) Módulo B
@@ -42,7 +42,7 @@ La web queda en <http://localhost:8080>. Parar: `docker compose down` (los volú
 | `/search?q=` | SQLi estilo MySQL: errores 1064/1222/1054/1105, `UNION SELECT` con filas falsas, `' OR 1=1` → tabla de usuarios con hashes, blind booleano y `SLEEP()` (acotado) | `request` |
 | `/view?file=` | LFI/traversal contra un **diccionario en memoria** (`/etc/passwd` falso, `config.php` falso, `php://filter`…). `/etc/shadow` → *Permission denied*; URLs (RFI) rechazadas | `request` |
 | `/ping?host=` | Command injection: ping falso y, con `; \| && $()` + `id`, `whoami`, `uname`, `cat`…, salida falsa. No ejecuta nada | `request` |
-| `/comment` | XSS reflejado **solo** en la respuesta al solicitante; no se guarda ni se muestra a otros | `request` |
+| `/comment` | Refleja el comentario **solo** al solicitante, escapado por defecto (DOM inerte); `COMMENT_REFLECT_RAW=true` activa el XSS reflejado de laboratorio. No se guarda ni se muestra a otros | `request` |
 | `/upload` | Acepta cualquier fichero (≤ 2 MB): nombre aleatorio, permisos `0640`, volumen aislado, **nunca se sirve**; responde con URL falsa | `file_upload` |
 | `/robots.txt`, `/.env`, `/.git/config`, `/.git/HEAD`, `/backup.zip` (ZIP vacío de 22 bytes), `/server-status` | "Descuidos" para escáneres (credenciales FALSAS) | `request` |
 | cualquier otra | 404/405/500 con el formato de Apache 2.4 | `request` |
@@ -66,11 +66,11 @@ más `auth{}` o `file{name,sha256,size,url}` según el caso. Ver `samples/web.sa
 
 Consulta [app/config.py](../../../modules/web-honeypot/app/config.py). Principales: `WEB_HOST_PORT`, `SERVER_HEADER`, `POWERED_BY`, `WEAK_USER`/`WEAK_PASS` (vacío = desactivada),
 `TRUST_PROXY`, `LOG_*`, `UPLOAD_*` (tope por fichero, nº y espacio total), `MAX_BODY_BYTES`, `BODY_READ_TIMEOUT_S`,
-`REQUEST_TIMEOUT_S`, `RATE_LIMIT_PER_MIN`/`RATE_LIMIT_BURST` (token bucket por IP; 0 = sin límite), `SLEEP_CAP_S`, `COMMENT_CSP`.
+`REQUEST_TIMEOUT_S`, `RATE_LIMIT_PER_MIN`/`RATE_LIMIT_BURST` (token bucket por IP; 0 = sin límite), `SLEEP_CAP_S`, `COMMENT_REFLECT_RAW`, `COMMENT_CSP`.
 
 ## Seguridad del contenedor
 
-Usuario 10001 sin root · `cap_drop: ALL` · `no-new-privileges` · `read_only` (+ `/tmp` tmpfs `noexec`) · 0,5 CPU / 256 MB / 128 PIDs ·
+Usuario 10001 sin root, solo escribe en `honeylogs-web` · `cap_drop: ALL` · `no-new-privileges` · `read_only` (+ `/tmp` tmpfs `noexec`) · 0,5 CPU / 256 MB / 128 PIDs ·
 imagen `python:3.12.8-slim-bookworm` y dependencias con versión fija · solo en `honeynet` · sin `docker.sock` ·
 uploads en el volumen propio `hp-web-uploads` (solo lo monta este contenedor) · un único worker (la rotación no es segura con varios).
 
@@ -81,7 +81,7 @@ docker compose ps                                   # hp-web  Up (healthy)
 curl -i http://localhost:8080/                      # 200, Server: Apache/2.4.41 (Ubuntu)
 docker exec hp-web tail -n 3 /logs/web/web.jsonl    # eventos recientes
 # o desde fuera del contenedor, tal como lo verá el módulo C (solo lectura):
-docker run --rm -v honeylogs:/logs:ro busybox tail -n 3 /logs/web/web.jsonl
+docker run --rm -v honeylogs-web:/logs/web:ro busybox tail -n 3 /logs/web/web.jsonl
 
 # Smoke test (necesita curl, jq y docker); debe terminar en "OK"
 tests/smoke_web.sh                                  # BASE_URL, CONTAINER o LOG_FILE configurables

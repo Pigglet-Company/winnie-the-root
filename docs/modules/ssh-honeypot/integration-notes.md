@@ -42,4 +42,5 @@ No he modificado el contrato. Suposiciones y dudas:
 
 ## Dudas
 - El UID final de Cowrie lo define la imagen. Al endurecer el `0777` de `honeylogs` habrá que dar permisos al UID de Cowrie y al `10001` de OpenCanary.
+  Resuelto en W04: un volumen por fuente; ver docs/lab-containment.md.
 - ¿Contempla el módulo B reservar su propio rango de IPs en `honeynet`?

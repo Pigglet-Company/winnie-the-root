@@ -272,9 +272,9 @@ def ping_page(host: str | None, output: str | None) -> str:
 
 
 # --------------------------------------------------------------------------- XSS reflejado
-def comment_page(name: str | None, comment: str | None) -> str:
-    """XSS REFLEJADO a propósito: name y comment se devuelven SIN escapar... pero solo en la
-    respuesta a quien los envió. No se guardan en ningún sitio ni los ve ningún otro visitante."""
+def comment_page(name: str | None, comment: str | None, raw: bool = False) -> str:
+    """Refleja name y comment solo en la respuesta a quien los envió; no se guardan ni los ve otro
+    visitante. Escapados por defecto (DOM inerte). raw=True devuelve el XSS reflejado "vivo"."""
     form = (
         '<form method="post" action="/comment"><label>Nombre</label><input type="text" name="name">'
         '<label>Comentario</label><textarea name="comment" rows="4"></textarea>'
@@ -282,9 +282,11 @@ def comment_page(name: str | None, comment: str | None) -> str:
     )
     reflected = ""
     if comment is not None or name:
+        if not raw:
+            name, comment = esc(name or ""), esc(comment or "")
         reflected = (
             f'<div class="ok">Gracias {name or "anonimo"}, hemos recibido tu comentario:'
-            f"<blockquote>{comment or ''}</blockquote></div>"  # <- sin esc(): intencionado
+            f"<blockquote>{comment or ''}</blockquote></div>"  # escapado arriba salvo raw
         )
     return layout("Contacto", f"<h1>Buzon de sugerencias</h1>{reflected}{form}", "contact")
 

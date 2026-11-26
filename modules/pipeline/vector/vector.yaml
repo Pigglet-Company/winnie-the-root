@@ -3,7 +3,7 @@
 #   fuentes (tail) -> normalización (VRL) -> filtro -> clasificación -> [final] -> OpenSearch
 #
 # La etapa "final" (GeoIP o no-op) vive en final_geo.yaml / final_nogeo.yaml;
-# entrypoint.sh elige una según exista /geoip/GeoLite2-City.mmdb.
+# entrypoint.sh elige una según exista /geoip/city.mmdb.
 # Reglas VRL en ./rules/ (la clasificación está SOLO en rules/classify.vrl).
 # =============================================================================
 data_dir: /var/lib/vector
