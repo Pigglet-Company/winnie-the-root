@@ -23,7 +23,7 @@ modules/web-honeypot/
 ## Arranque (local)
 
 ```bash
-# 1) Una sola vez, desde la raíz del repo (crea red "honeynet" y volumen "honeylogs")
+# 1) Una sola vez, desde la raíz del repo (crea la red "honeynet" y los volúmenes "honeylogs-*")
 ./scripts/init.sh
 
 # 2) Módulo B
@@ -71,7 +71,7 @@ Ver `.env.example`. Principales: `WEB_HOST_PORT`, `SERVER_HEADER`, `POWERED_BY`,
 
 ## Seguridad del contenedor
 
-Usuario 10001 sin root · `cap_drop: ALL` · `no-new-privileges` · `read_only` (+ `/tmp` tmpfs `noexec`) · 0,5 CPU / 256 MB / 128 PIDs ·
+Usuario 10001 sin root, solo escribe en `honeylogs-web` · `cap_drop: ALL` · `no-new-privileges` · `read_only` (+ `/tmp` tmpfs `noexec`) · 0,5 CPU / 256 MB / 128 PIDs ·
 imagen `python:3.12.8-slim-bookworm` y dependencias con versión fija · solo en `honeynet` · sin `docker.sock` ·
 uploads en el volumen propio `hp-web-uploads` (solo lo monta este contenedor) · un único worker (la rotación no es segura con varios).
 
@@ -82,7 +82,7 @@ docker compose ps                                   # hp-web  Up (healthy)
 curl -i http://localhost:8080/                      # 200, Server: Apache/2.4.41 (Ubuntu)
 docker exec hp-web tail -n 3 /logs/web/web.jsonl    # eventos recientes
 # o desde fuera del contenedor, tal como lo verá el módulo C (solo lectura):
-docker run --rm -v honeylogs:/logs:ro busybox tail -n 3 /logs/web/web.jsonl
+docker run --rm -v honeylogs-web:/logs/web:ro busybox tail -n 3 /logs/web/web.jsonl
 
 # Smoke test (necesita curl, jq y docker); debe terminar en "OK"
 tests/smoke_web.sh                                  # BASE_URL, CONTAINER o LOG_FILE configurables

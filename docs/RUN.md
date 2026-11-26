@@ -71,13 +71,16 @@ Pruebas de humo: `modules/ssh-honeypot/tests/smoke_ssh.sh` (necesita `sshpass` y
 ./scripts/down.sh full --purge        # borra volúmenes de los tres módulos, red y logs compartidos
 ```
 `down.sh` sale con error y muestra la causa si algo no se pudo parar. `--purge` solo borra la red
-`honeynet` y el volumen `honeylogs` si llevan la etiqueta `io.winnie.project=winnie-the-root` (los
-crea así `init.sh`); si se crearon con una versión anterior, te dice cómo borrarlos a mano.
+`honeynet` y los volúmenes `honeylogs-<fuente>` si llevan la etiqueta `io.winnie.project=winnie-the-root` (los
+crea así `init.sh`); si se crearon con una versión anterior, te dice cómo borrarlos a mano. Nunca borra el volumen
+anterior `honeylogs`: si vienes de esa versión, migra con `./scripts/migrate_honeylogs.sh`
+([contención del laboratorio](lab-containment.md#migración-desde-honeylogs)).
 
 ## Avisos importantes
 
-- **No lo expongas a Internet tal cual.** `honeylogs` queda con permisos 0777 (solo pruebas; W04),
-  el perfil `prod` usa certificados de demo y `admin` para Vector.
+- **No lo expongas a Internet tal cual.** El perfil `prod` usa certificados de demo y `admin` para
+  Vector. `up.sh full` se detiene si la honeynet puede abrir conexiones nuevas hacia fuera: aplica
+  antes `sudo modules/ssh-honeypot/scripts/egress-firewall.sh` ([contención](lab-containment.md)).
 - `modules/ssh-honeypot/deploy/setup.sh` toca SSH y firewall del servidor: comprueba sus
   prerrequisitos antes de cambiar nada, pero ensáyalo en una máquina desechable y con autorización
   antes de usarlo en un VPS real.

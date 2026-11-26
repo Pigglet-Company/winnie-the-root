@@ -56,6 +56,10 @@ jobs:
           ./scripts/preflight.sh --help
       - name: Public entry with Docker (Compose models, failed preflight, second init)
         run: ./tests/check_public_entry_docker.sh --cleanup
+      - name: Lab containment (migration, mounts, real UIDs, egress, restart)
+        env:
+          WINNIE_DISPOSABLE_HOST: "1"   # el runner es desechable: la prueba cambia iptables con sudo
+        run: ./tests/check_isolation_docker.sh
       - name: Download DB-IP City Lite for the GeoIP branch
         run: bash modules/pipeline/scripts/download_geoip.sh
       - name: Run Vector tests (no-geo and GeoIP branches)

@@ -36,10 +36,19 @@ module_containers() {
 
 # Recursos compartidos que crea init.sh. La etiqueta marca que son de este proyecto:
 # down.sh --purge solo borra los que la llevan.
-SHARED_NET="honeynet"
+SHARED_NET="honeynet"           # sin tráfico entre contenedores (icc) y sin IPv6
 SHARED_SUBNET="172.30.0.0/24"
-SHARED_VOL="honeylogs"
 PROJECT_LABEL="io.winnie.project=winnie-the-root"
+
+# Un volumen de logs por fuente: "fuente:volumen:UID del productor:cuota en MiB".
+# Cada productor monta solo el suyo en escritura; el colector (Vector) los monta todos en solo
+# lectura. La raíz de cada volumen es UID:READER_GID con modo 2750: el productor escribe, el
+# grupo del colector lee y nadie más entra. La cuota la comprueba scripts/volume_usage.sh.
+SOURCE_VOLUMES="cowrie:honeylogs-cowrie:999:2048 opencanary:honeylogs-opencanary:10002:512 web:honeylogs-web:10001:512"
+READER_GID=1000                 # grupo de pl-vector (user 1000:1000)
+LEGACY_VOL="honeylogs"          # volumen único anterior a W04: solo se lee al migrar
+
+source_volume_names() { local s; for s in $SOURCE_VOLUMES; do s="${s#*:}"; printf '%s\n' "${s%%:*}"; done; }
 
 # Requisitos de host.
 REQUIRED_COMMANDS="docker python3 curl"

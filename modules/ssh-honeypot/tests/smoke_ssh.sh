@@ -23,9 +23,9 @@ for bin in ssh sshpass jq docker; do
   command -v "$bin" >/dev/null 2>&1 || fail "falta '$bin'"
 done
 
-# Lee cowrie.json del volumen compartido (la imagen de Cowrie no trae shell)
+# Lee cowrie.json de honeylogs-cowrie (la imagen de Cowrie no trae shell)
 read_log() {
-  docker run --rm -v honeylogs:/logs:ro "$BUSYBOX_IMAGE" cat "$LOG_PATH" 2>/dev/null || true
+  docker run --rm -v honeylogs-cowrie:/logs/cowrie:ro "$BUSYBOX_IMAGE" cat "$LOG_PATH" 2>/dev/null || true
 }
 
 # has_event <eventid> [campo] [regex]  -> exit 0 si hay algún evento que cumpla
